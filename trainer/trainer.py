@@ -24,6 +24,7 @@ class Trainer:
         使用加载的配置启动YOLOv8训练。
         """
         print(f"--- 使用配置文件 '{self.yolo_config_path.name}' 开始训练 ---")
+        self.yolo_config.pop('names', None)
         self.model.train(**self.yolo_config)
         print("--- ✅ 训练完成 ---")
         

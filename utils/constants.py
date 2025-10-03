@@ -1,52 +1,57 @@
-# 文件: /home/zhz/deepl/utils/constants.py (V6.0 - 权威配置最终版)
-# 职责: 项目的唯一事实来源，只从 labelme_config.txt 构建类别，确保全局绝对一致。
+# 文件: /home/zhz/deepl/utils/constants.py (V7.0 - 动态YAML加载器最终版)
+# 职责: 提供一个健壮的工具，用于从YOLOv8训练配置文件(.yaml)中动态加载类别信息。
+#       本模块不再是静态的“事实来源”，而是一个动态的、按需服务的“信息解析器”。
 
+import yaml
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, Tuple, List
 
-# --- 核心配置 ---
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# 【核心】现在，唯一的“真理之源”是这个您亲自维护的配置文件
-LABELME_CONFIG_PATH = PROJECT_ROOT / "configs" / "labelme_config.txt"
-
-# 【核心】我们在这里定义哪些前缀的类别是需要训练的
-TRAINING_PREFIXES = ('1-unit-', '2-status-', '3-item-', '4-ui-', '5-skill-')
-
-def _load_and_parse_classes() -> List[str]:
+def get_class_maps_from_yolo_config(yolo_config_path: Path) -> Tuple[Dict[str, int], Dict[int, str]]:
     """
-    从权威的 labelme_config.txt 读取所有类别，并根据 TRAINING_PREFIXES 进行筛选和解析。
-    【核心修正】使用列表代替集合，以保证类别顺序与文件中的定义完全一致。
+    从指定的YOLO配置文件中读取'names'字段，并生成类别到ID和ID到类别的映射。
+
+    该函数具有高鲁棒性，能够智能处理两种常见的 'names' 格式:
+    1. 字典格式 (YOLOv8 推荐): {0: 'cat', 1: 'dog'}
+    2. 列表格式 (旧版YOLOv5兼容): ['cat', 'dog']
+
+    Args:
+        yolo_config_path (Path): 指向YOLO训练配置 .yaml 文件的路径对象。
+
+    Returns:
+        A tuple containing:
+        - class_to_id (Dict[str, int]): A dictionary mapping class names to IDs.
+        - id_to_class (Dict[int, str]): A dictionary mapping IDs to class names.
+        
+    Raises:
+        FileNotFoundError: 如果配置文件不存在。
+        KeyError: 如果配置文件中缺少 'names' 字段。
+        ValueError: 如果 'names' 字段为空或格式不正确。
     """
-    if not LABELME_CONFIG_PATH.exists():
-        raise FileNotFoundError(f"错误: 权威类别配置文件未找到于 {LABELME_CONFIG_PATH}")
+    print(f"--- [类别加载] 动态加载类别来源: {yolo_config_path.name} ---")
+    if not yolo_config_path.is_file():
+        raise FileNotFoundError(f"❌ 错误: 动态类别源文件未找到: {yolo_config_path}")
 
-    training_classes = []  # <--- 改为列表
-    with open(LABELME_CONFIG_PATH, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            if line.startswith(TRAINING_PREFIXES):
-                specific_name = line.rsplit('-', 1)[-1]
-                if specific_name not in training_classes: 
-                    training_classes.append(specific_name)
+    with open(yolo_config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
 
-    return training_classes 
+    if 'names' not in config:
+        raise KeyError(f"❌ 错误: 在 {yolo_config_path.name} 中未找到关键的 'names' 字段。")
 
-# --- 执行加载并生成核心常量 ---
-TRAINING_CLASSES: List[str] = _load_and_parse_classes()
+    names_data = config['names']
+    if not names_data:
+        raise ValueError(f"❌ 错误: 'names' 字段在 {yolo_config_path.name} 中为空。")
 
-# --- 映射关系 ---
-CLASS_TO_ID: Dict[str, int] = {name: i for i, name in enumerate(TRAINING_CLASSES)}
-ID_TO_CLASS: Dict[int, str] = {i: name for i, name in enumerate(TRAINING_CLASSES)}
-NUM_CLASSES: int = len(TRAINING_CLASSES)
+    # --- 核心逻辑: 智能解析 'names' ---
+    if isinstance(names_data, dict):
+        # YOLOv8 格式: {0: 'name1', 1: 'name2'}
+        id_to_class = dict(sorted(names_data.items())) # 确保ID有序
+        class_to_id = {name: i for i, name in id_to_class.items()}
+    elif isinstance(names_data, list):
+        # YOLOv5 兼容格式: ['name1', 'name2']
+        id_to_class = {i: name for i, name in enumerate(names_data)}
+        class_to_id = {name: i for i, name in id_to_class.items()}
+    else:
+        raise TypeError(f"❌ 错误: 'names' 字段的格式无法识别。期望是字典或列表，但得到的是 {type(names_data)}。")
 
-# --- 启动自检与信息打印 ---
-print("="*50)
-print("✅ [constants.py] 模块已成功加载 (权威配置模式)。")
-print(f"   - 权威配置文件: {LABELME_CONFIG_PATH}")
-print(f"   - 本次模型将训练的类别总数: {NUM_CLASSES}")
-if TRAINING_CLASSES:
-    print(f"   - 示例类别 -> ID: '{TRAINING_CLASSES[0]}' -> {CLASS_TO_ID[TRAINING_CLASSES[0]]}")
-print("="*50)
+    print(f"✅ [类别加载] 成功加载 {len(id_to_class)} 个类别。")
+    return class_to_id, id_to_class

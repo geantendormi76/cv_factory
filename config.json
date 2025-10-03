@@ -4,7 +4,7 @@
   "tasks": {
     "detector": {
         "description": "训练YOLO11实体检测器 (来自真实数据)",
-        "yolo_config_path": "main_config.yaml",
+        "yolo_config_path": "yolo_events_v1.yaml",
         "data_builder_module": "data_loader.detector_loader",
         "data_builder_func": "build_yolo_dataset"
     },
@@ -26,8 +26,8 @@
     }
   },
   "data_paths": {
-    "detector_source_dir": "data/raw/yolov11",
-    "detector_output_dir": "data/processed/yolov11_dataset",
+    "detector_source_dir": "data/raw/yolo_events_v1", 
+    "detector_output_dir": "data/processed/yolo_events_v1_dataset",
 
     "classifier_asset_dir": "data/raw/assets_battle_units",
     "classifier_output_dir": "data/processed/battle_units_for_classification",
