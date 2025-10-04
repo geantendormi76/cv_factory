@@ -50,7 +50,7 @@ class Trainer:
         
         if task_type == 'detect':
             print("🚀 正在以【最高兼容性】模式导出检测器模型...")
-            target_name = "yolov11.onnx"
+            target_name = "yolo_ui_elements_v1.onnx"
             export_params = {
                 'format': 'onnx',
                 'opset': 13,         

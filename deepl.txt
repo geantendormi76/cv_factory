@@ -1,0 +1,1717 @@
+=== 项目核心文件结构 ===
+
+deepl
+├── base
+│   └── __init__.py
+├── config.json
+├── configs
+│   ├── main_config.yaml
+│   ├── synthesis_config.yaml
+│   └── yolo_events_v1.yaml
+├── data_loader
+│   ├── __init__.py
+│   ├── classifier_loader.py
+│   └── detector_loader.py
+├── logger
+│   └── __init__.py
+├── model
+│   └── __init__.py
+├── prepare_data.py
+├── py.py
+├── runs
+│   ├── yolo_events_v1_run
+│   │   └── args.yaml
+│   └── yolo_synthetic_v3
+│       └── args.yaml
+├── test.py
+├── tools
+│   ├── data_inspector.py
+│   └── data_synthesizer.py
+├── train.py
+├── trainer
+│   ├── __init__.py
+│   └── trainer.py
+└── utils
+    ├── __init__.py
+    └── constants.py
+
+
+=== 核心文件内容 ===
+
+================================================
+FILE: base/__init__.py
+================================================
+
+
+================================================
+FILE: config.json
+================================================
+
+{
+  "project_name": "MHXY_AI_Model_Factory",
+  "n_gpu": 1,
+  "tasks": {
+    "detector": {
+        "description": "训练YOLO11实体检测器 (来自真实数据)",
+        "yolo_config_path": "yolo_events_v1.yaml",
+        "data_builder_module": "data_loader.detector_loader",
+        "data_builder_func": "build_yolo_dataset"
+    },
+    "classifier": {
+      "description": "训练YOLO11战斗单位分类器",
+      "yolo_config_path": "classifier_config.yaml",
+      "data_builder_module": "data_loader.classifier_loader",
+      "data_builder_func": "generate_classifier_data"
+    },
+    "synthetic_generator": {
+      "description": "使用资产库生成YOLO11检测训练数据",
+      "data_builder_module": "data_loader.synthetic_data_generator",
+      "data_builder_func": "generate_synthetic_dataset",
+      "config": {
+        "num_images_to_generate": 10000,
+        "max_instances_per_image": 20,
+        "min_instances_per_image": 5
+      }
+    }
+  },
+  "data_paths": {
+    "detector_source_dir": "data/raw/yolo_events_v1", 
+    "detector_output_dir": "data/processed/yolo_events_v1_dataset",
+
+    "classifier_asset_dir": "data/raw/assets_battle_units",
+    "classifier_output_dir": "data/processed/battle_units_for_classification",
+    
+    "synthetic_assets_dir": "data/assets/foregrounds",
+    "synthetic_backgrounds_dir": "data/assets/backgrounds",
+    "synthetic_output_dir": "data/processed/synthetic_dataset"
+  }
+}
+================================================
+FILE: configs/main_config.yaml
+================================================
+
+# 文件: configs/main_config.yaml (V_final - 黄金混合数据微调版)
+
+# --- 1. 核心训练设置 ---
+# 【核心起点】加载您上一轮用300+真实数据训练出的最强模型！
+model: /home/zhz/deepl/runs/numbers_v1/locator_finetune_with_numbers_v1/weights/best.pt
+
+# 【核心数据】指向我们刚刚生成的合成数据集。我们将在这个基础上进行数据合并。
+data: /home/zhz/deepl/data/processed/synthetic_locator_dataset/dataset.yaml
+
+# 【调整】数据集很大，给足学习时间，但patience会保护我们
+epochs: 30
+patience: 10
+
+# 【调整】数据集变大，可以适当增加批量大小以加速训练
+batch: 32
+imgsz: 640
+device: 0
+workers: 8
+project: /home/zhz/deepl/runs/
+# 【核心】为这次决定性的训练起一个全新的名字！
+name: yolo_synthetic_v3
+exist_ok: True
+
+# --- 2. 优化器与学习率 ---
+optimizer: auto
+# 【核心关键】这仍然是一次微调，使用较低的学习率来“精雕细琢”，而不是“推倒重来”
+lr0: 0.001
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+
+# --- 3. 损失函数权重 (针对性优化) ---
+# 【优化】适当提高分类损失的权重，让模型更关注识别对稀缺类别
+box: 7.5
+cls: 1.0  # 从 0.5 提升到 1.0
+dfl: 1.5
+
+# --- 4. 数据增强 (保持强化版) ---
+degrees: 20.0
+translate: 0.2
+scale: 0.2  # 适当减小缩放范围，保护小目标
+fliplr: 0.5
+mosaic: 1.0
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+================================================
+FILE: configs/synthesis_config.yaml
+================================================
+
+# 文件: configs/synthesis_config.yaml (V3.0 - 精确ROI锚点版)
+
+# --- 1. 核心生成参数 ---
+num_images_to_generate: 10000  # 为稀缺类别生成充足的数据
+output_image_size: [800, 600]
+
+# --- 2. 战斗单位合成参数 ---
+unit_density:
+  min_enemy_units: 3
+  max_enemy_units: 10
+  # 友方单位固定为1个玩家+1个宠物
+
+# --- 3. 【核心更新】高保真放置黄金法则 (基于您的精确ROI) ---
+placement_rules:
+  # 战术槽位ROI：每个单位将在其指定的矩形框内随机放置
+  formation_slots:
+    enemy_back:
+      - [30, 187, 130, 282]
+      - [111, 145, 207, 240]
+      - [144, 46, 303, 192]
+      - [254, 43, 364, 138]
+      - [320, 13, 453, 111]
+    enemy_front:
+      - [83, 261, 202, 359]
+      - [148, 180, 272, 295]
+      - [238, 147, 356, 253]
+      - [311, 81, 428, 203]
+      - [398, 56, 517, 161]
+    friendly_front: # For pets
+      - [304, 394, 406, 497]
+      - [366, 343, 474, 442]
+      - [441, 288, 553, 387]
+      - [512, 237, 621, 346]
+      - [578, 185, 703, 290]
+    friendly_back:  # For players
+      - [375, 412, 472, 556]
+      - [438, 364, 546, 517]
+      - [513, 313, 616, 446]
+      - [596, 270, 707, 413]
+      - [666, 223, 766, 363]
+  
+  overlap_threshold: 0.05 # 允许的重叠率可以调得更低，因为位置已经很精确
+
+# --- 4. 状态指示器关联规则 (精确版) ---
+healthbar_association:
+  enabled: true
+  probability: 0.95
+  vertical_offset: -30 # 固定向上偏移30像素
+  body_center_jitter_ratio: 0.4
+  
+damage_number_association:
+  enabled: true
+  probability: 0.8
+  heal_probability: 0.3 
+  body_center_jitter_ratio: 0.4
+
+# --- 5. UI遮挡增强 (精确版) ---
+ui_occlusion:
+  enabled: true
+  probability: 0.5
+  # 技能UI背景的绝对位置
+  panel_roi: [303, 135, 495, 463]
+  # 技能图标相对于 panel_roi 左上角的偏移位置
+  skill_slots_relative:
+    - [30, 42, 69, 77]
+    - [124, 40, 164, 79]
+    - [29, 87, 70, 127]
+    - [124, 85, 162, 125]
+    - [29, 131, 71, 170]
+    - [122, 130, 163, 173]
+  num_skills_to_show_range: [4, 6]
+
+# --- 6. 资产约定 (保持不变) ---
+asset_conventions:
+  default_facing_direction: "right"
+================================================
+FILE: configs/yolo_events_v1.yaml
+================================================
+
+# 文件: configs/yolo_events_v1.yaml
+# 职责: [最终的单一事实来源] 定义本次任务的所有配置。
+#       服务于 prepare_data.py (读取 names) 和 train.py (读取所有参数)。
+
+# --- 1. 核心训练设置 ---
+# 【核心起点】从一个预训练模型开始
+model: yolov8n.pt  # 或者 /home/zhz/deepl/models/yolov8n.pt
+
+# 【核心数据】指向数据准备脚本将要生成的 dataset.yaml
+# 请使用绝对路径以保证健壮性
+data: /home/zhz/deepl/data/processed/yolo_events_v1_dataset/dataset.yaml
+
+# 【核心训练参数】
+epochs: 200
+patience: 30
+batch: 8
+imgsz: 640
+device: 0
+workers: 8
+project: /home/zhz/deepl/runs/
+name: yolo_events_v1_run
+exist_ok: True
+
+# --- 2. 优化器与学习率 ---
+optimizer: auto
+lr0: 0.01
+lrf: 0.01
+
+# --- 3. 类别名称 (供 prepare_data.py 使用) ---
+# 【核心】这个列表是数据转换的依据，必须与修复后的 .json 标签一致。
+names:
+  0: 伤害数值
+  1: 恢复数值
+  2: 血条
+================================================
+FILE: data_loader/__init__.py
+================================================
+
+
+================================================
+FILE: data_loader/classifier_loader.py
+================================================
+
+# 文件: data_loader/classification_dataset_builder.py (适配版)
+import cv2
+import numpy as np
+from pathlib import Path
+import random
+import shutil
+from tqdm import tqdm
+import sys
+from typing import Dict
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+def generate_classifier_data(config: Dict):
+    """
+    通过增强素材，生成YOLO分类任务的数据集。
+    :param config: 从主config.json加载的完整配置字典。
+    """
+    data_paths = config['data_paths']
+    asset_dir = Path(data_paths['classifier_asset_dir'])
+    output_dir = Path(data_paths['classifier_output_dir'])
+    
+    print(f"--- [数据构建] 开始生成分类器数据: {asset_dir} ---")
+
+    if not asset_dir.is_dir():
+        print(f"⚠️ 警告: 素材目录 {asset_dir} 不存在，跳过数据准备。")
+        print("   请将分类素材放入该目录。")
+        return
+
+    # ... 此处粘贴您原来的 01_data_generator.py 的核心逻辑 ...
+    # 为了保持完整性，我将整个函数逻辑复制过来
+    SAMPLES_PER_CLASS = 300
+    SCALE_RANGE = (0.8, 1.2)
+    ROTATION_RANGE = (-15, 15)
+    FLIP_CHANCE = 0.5
+    
+    assets = {}
+    class_pinyin_names = [d.name for d in asset_dir.iterdir() if d.is_dir()]
+    for pinyin_name in class_pinyin_names:
+        assets[pinyin_name] = [cv2.imread(str(p), cv2.IMREAD_UNCHANGED) for p in (asset_dir / pinyin_name).glob("*.png")]
+        assets[pinyin_name] = [img for img in assets[pinyin_name] if img is not None]
+    
+    if not assets:
+        print(f"❌ 错误: 在 {asset_dir} 中未找到任何有效的素材。")
+        return
+
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    
+    for pinyin_name in assets.keys():
+        (output_dir / pinyin_name).mkdir(parents=True, exist_ok=True)
+
+    for pinyin_name, asset_list in tqdm(assets.items(), desc="生成类别"):
+        if not asset_list: continue
+        for i in range(SAMPLES_PER_CLASS):
+            base_asset = random.choice(asset_list)
+            augmented_asset = augment_asset(base_asset, SCALE_RANGE, ROTATION_RANGE, FLIP_CHANCE)
+            if augmented_asset is None: continue
+            final_sample = augmented_asset[:,:,:3]
+            save_path = output_dir / pinyin_name / f"{pinyin_name}_{i:04d}.png"
+            cv2.imwrite(str(save_path), final_sample)
+
+    print(f"✅ [数据构建] 分类数据集构建成功！\n   输出目录: {output_dir}")
+
+def augment_asset(asset, scale_range, rotation_range, flip_chance):
+    scale = random.uniform(*scale_range)
+    h, w = asset.shape[:2]
+    new_h, new_w = int(h * scale), int(w * scale)
+    if new_h <= 0 or new_w <= 0: return None
+    augmented_asset = cv2.resize(asset, (new_w, new_h))
+    angle = random.uniform(*rotation_range)
+    center = (new_w // 2, new_h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    cos, sin = np.abs(M[0, 0]), np.abs(M[0, 1])
+    nW, nH = int((new_h * sin) + (new_w * cos)), int((new_h * cos) + (new_w * sin))
+    M[0, 2] += (nW / 2) - center[0]
+    M[1, 2] += (nH / 2) - center[1]
+    augmented_asset = cv2.warpAffine(augmented_asset, M, (nW, nH))
+    if random.random() < flip_chance:
+        augmented_asset = cv2.flip(augmented_asset, 1)
+    return augmented_asset
+
+================================================
+FILE: data_loader/detector_loader.py
+================================================
+
+# 文件: data_loader/detector_loader.py (V4.0 - 鲁棒性清理最终版)
+import sys
+import json
+import shutil
+from pathlib import Path
+from tqdm import tqdm
+import numpy as np
+from sklearn.model_selection import train_test_split
+from typing import List, Dict
+import yaml
+
+# 确保能导入utils模块
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.constants import get_class_maps_from_yolo_config
+
+def build_yolo_dataset(config: Dict):
+    # ... (此函数的上半部分完全不变，从 data_paths 到 train_test_split) ...
+    data_paths = config['data_paths']
+    source_dir = Path(data_paths['detector_source_dir'])
+    output_dir = Path(data_paths['detector_output_dir'])
+    val_split_ratio = 0.2
+
+    print(f"--- [数据构建] 开始处理源数据: {source_dir} ---")
+    
+    if not source_dir.is_dir():
+        print(f"⚠️ 警告: 源数据目录 {source_dir} 不存在，跳过数据准备。")
+        return
+
+    task_config = config['tasks']['detector']
+    yolo_config_filename = task_config['yolo_config_path']
+    yolo_config_path = PROJECT_ROOT / 'configs' / yolo_config_filename
+    
+    try:
+        CLASS_TO_ID, ID_TO_CLASS = get_class_maps_from_yolo_config(yolo_config_path)
+    except Exception as e:
+        print(f"❌ 错误: 加载类别信息失败。详情: {e}")
+        return
+
+    if output_dir.exists():
+        print(f"清理旧数据集目录: {output_dir}")
+        shutil.rmtree(output_dir)
+    (output_dir / "images/train").mkdir(parents=True, exist_ok=True); (output_dir / "images/val").mkdir(parents=True, exist_ok=True)
+    (output_dir / "labels/train").mkdir(parents=True, exist_ok=True); (output_dir / "labels/val").mkdir(parents=True, exist_ok=True)
+
+    json_files = list(source_dir.glob("*.json"))
+    if not json_files:
+        print(f"❌ 错误: 在 {source_dir} 中未找到任何 .json 文件。")
+        return
+
+    train_files, val_files = train_test_split(json_files, test_size=val_split_ratio, random_state=42)
+    print(f"数据集划分完成: {len(train_files)} 训练, {len(val_files)} 验证。")
+
+    # 【鲁棒性增强】增加一个集合，用于跟踪所有未匹配的标签，避免重复打印警告
+    unmatched_labels_tracker = set()
+
+    for split_name, file_list in [("train", train_files), ("val", val_files)]:
+        if not file_list: continue
+        for json_path in tqdm(file_list, desc=f"转换 {split_name} 集"):
+            image_path = json_path.with_suffix(".png")
+            if not image_path.exists(): continue
+            
+            shutil.copy(image_path, output_dir / f"images/{split_name}/{image_path.name}")
+            
+            yolo_labels = convert_single_json_to_yolo(json_path, CLASS_TO_ID, unmatched_labels_tracker)
+            label_path = output_dir / f"labels/{split_name}/{json_path.stem}.txt"
+            with open(label_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(yolo_labels))
+
+    if unmatched_labels_tracker:
+        print("\n" + "="*50)
+        print("⚠️ [数据构建警告] 检测到以下标签无法匹配，已被跳过:")
+        for lbl in sorted(list(unmatched_labels_tracker)):
+            print(f"  - '{lbl}'")
+        print("="*50 + "\n")
+                
+    dataset_yaml_data = {'path': str(output_dir.resolve()), 'train': 'images/train', 'val': 'images/val', 'names': ID_TO_CLASS}
+    dataset_yaml_path = output_dir / "dataset.yaml"
+    with open(dataset_yaml_path, 'w', encoding='utf-8') as f:
+        yaml.dump(dataset_yaml_data, f, sort_keys=False, allow_unicode=True)
+    
+    print(f"✅ [数据构建] 检测数据集构建成功！\n   输出目录: {output_dir}")
+
+def convert_single_json_to_yolo(json_path: Path, class_mapping: dict, unmatched_tracker: set) -> List[str]:
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    img_h, img_w = data['imageHeight'], data['imageWidth']
+    yolo_labels = []
+    for shape in data['shapes']:
+        # 【核心修正】在进行任何比较之前，对标签进行清理！
+        # .strip() 会移除所有前导和尾随的空白字符（空格、制表符、换行符等）。
+        # 这是数据处理的黄金法则。
+        label = shape['label'].strip()
+            
+        if label not in class_mapping:
+            if label not in unmatched_tracker:
+                unmatched_tracker.add(label) # 记录未匹配的标签
+            continue
+        
+        class_id = class_mapping[label]
+        points = np.array(shape['points'])
+        x_min, y_min = points.min(axis=0)
+        x_max, y_max = points.max(axis=0)
+        
+        cx = (x_min + x_max) / 2 / img_w; cy = (y_min + y_max) / 2 / img_h
+        w = (x_max - x_min) / img_w; h = (y_max - y_min) / img_h
+        
+        yolo_labels.append(f"{class_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+    
+    return yolo_labels
+================================================
+FILE: logger/__init__.py
+================================================
+
+
+================================================
+FILE: model/__init__.py
+================================================
+
+
+================================================
+FILE: prepare_data.py
+================================================
+
+# 文件: /home/zhz/deepl/prepare_data.py
+# 职责: 专门负责调用数据加载器，将原始数据 (如.json) 转换为YOLO格式。
+
+import argparse
+import json
+from pathlib import Path
+import importlib
+
+def main(config, task_name):
+    task_config = config['tasks'][task_name]
+    print(f"\n--- 启动数据准备任务: {task_config['description']} ---")
+    
+    data_builder_module_name = task_config['data_builder_module']
+    data_builder_func_name = task_config['data_builder_func']
+    
+    try:
+        module = importlib.import_module(data_builder_module_name)
+        prepare_data_func = getattr(module, data_builder_func_name)
+        prepare_data_func(config)
+        print(f"\n✅ 数据准备任务 '{task_name}' 完成！")
+    except Exception as e:
+        print(f"❌ 错误: 执行数据准备脚本时失败。详情: {e}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='MHXY AI Model Factory - Data Preparation')
+    parser.add_argument('-c', '--config', default='config.json', type=str)
+    parser.add_argument('-t', '--task', type=str, required=True, choices=['detector', 'classifier'])
+    args = parser.parse_args()
+    
+    config_path = Path(args.config)
+    if not config_path.is_file():
+        print(f"❌ 错误: 找不到配置文件 '{config_path}'")
+    else:
+        config = json.loads(config_path.read_text())
+        main(config, args.task)
+================================================
+FILE: py.py
+================================================
+
+# 文件: create_digest.py (V3.0 - 双重过滤最终版)
+# 职责: 一个专业的、可配置的、100%可靠的本地代码提取器。
+#       通过“文件名黑名单”和“扩展名白名单”双重过滤，确保输出绝对纯净。
+
+import os
+from pathlib import Path
+
+# ==================================================================
+# 1. 核心配置：定义双重过滤规则
+# ==================================================================
+
+# 黑名单：无论扩展名是什么，都强制排除这些特定的文件名
+EXCLUDE_FILENAMES = {
+    "ag_environment.yml",
+    "ocr_environment.yml",
+    "yolo_environment.yml",
+    # 未来可以添加其他已知的非文本文件
+}
+
+# 白名单：只包含这些后缀名的文件
+TARGET_EXTENSIONS = {".py", ".yml", ".yaml", ".json"}
+
+# 黑名单：彻底排除这些目录及其所有内容
+EXCLUDE_DIRS = {
+    "__pycache__", ".git", ".idea", ".vscode", ".pytest_cache",
+    "venv", ".venv", "env", "node_modules", "dist", "build",
+    "site-packages", "logs", "data", "models", "tests"
+}
+
+# ==================================================================
+
+def generate_code_digest(root_dir: Path, output_filename: str = "full_code_filtered.txt"):
+    """
+    遍历指定目录，通过双重过滤生成一个纯净的文本摘要。
+    """
+    print(f"🚀 开始分析项目: {root_dir}")
+    
+    target_files = []
+
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
+        
+        for filename in filenames:
+            # --- [核心修正：双重过滤逻辑] ---
+            # 1. 优先检查文件名是否在黑名单中
+            if filename in EXCLUDE_FILENAMES:
+                continue # 如果是，立即跳过
+
+            file_path = Path(dirpath) / filename
+            
+            # 2. 再检查文件扩展名是否在白名单中
+            if file_path.suffix in TARGET_EXTENSIONS:
+                target_files.append(file_path)
+
+    target_files.sort()
+    print(f"🔍 找到 {len(target_files)} 个核心代码/配置文件。")
+
+    with open(output_filename, "w", encoding="utf-8") as f:
+        f.write("=== 项目核心文件结构 ===\n\n")
+        f.write(f"{root_dir.name}\n")
+        
+        tree_structure = {}
+        for path in target_files:
+            parts = path.relative_to(root_dir).parts
+            current_level = tree_structure
+            for part in parts:
+                if part not in current_level: current_level[part] = {}
+                current_level = current_level[part]
+        
+        _write_tree(f, tree_structure)
+        
+        f.write("\n\n=== 核心文件内容 ===\n")
+        for file_path in target_files:
+            relative_path = file_path.relative_to(root_dir)
+            formatted_path = str(relative_path).replace('\\', '/')
+            
+            f.write(f"\n================================================\n")
+            f.write(f"FILE: {formatted_path}\n")
+            f.write(f"================================================\n\n")
+            try:
+                content = file_path.read_text(encoding="utf-8", errors='ignore')
+                f.write(content)
+            except Exception as e:
+                f.write(f"*** 无法读取文件: {e} ***\n")
+
+    print(f"✅ 专业代码提取完成！")
+    print(f"摘要已保存到: {output_filename}")
+
+
+def _write_tree(file_handle, tree_structure, prefix=""):
+    entries = sorted(tree_structure.keys())
+    for i, entry in enumerate(entries):
+        connector = "└── " if i == len(entries) - 1 else "├── "
+        file_handle.write(f"{prefix}{connector}{entry}\n")
+        if tree_structure[entry]:
+            new_prefix = prefix + ("    " if i == len(entries) - 1 else "│   ")
+            _write_tree(file_handle, tree_structure[entry], new_prefix)
+
+
+if __name__ == "__main__":
+    current_directory = Path.cwd()
+    generate_code_digest(current_directory)
+================================================
+FILE: runs/yolo_events_v1_run/args.yaml
+================================================
+
+task: detect
+mode: train
+model: yolov8n.pt
+data: /home/zhz/deepl/data/processed/yolo_events_v1_dataset/dataset.yaml
+epochs: 200
+time: null
+patience: 30
+batch: 8
+imgsz: 640
+save: true
+save_period: -1
+cache: false
+device: '0'
+workers: 8
+project: /home/zhz/deepl/runs/
+name: yolo_events_v1_run
+exist_ok: true
+pretrained: true
+optimizer: auto
+verbose: true
+seed: 0
+deterministic: true
+single_cls: false
+rect: false
+cos_lr: false
+close_mosaic: 10
+resume: false
+amp: true
+fraction: 1.0
+profile: false
+freeze: null
+multi_scale: false
+overlap_mask: true
+mask_ratio: 4
+dropout: 0.0
+val: true
+split: val
+save_json: false
+conf: null
+iou: 0.7
+max_det: 300
+half: false
+dnn: false
+plots: true
+source: null
+vid_stride: 1
+stream_buffer: false
+visualize: false
+augment: false
+agnostic_nms: false
+classes: null
+retina_masks: false
+embed: null
+show: false
+save_frames: false
+save_txt: false
+save_conf: false
+save_crop: false
+show_labels: true
+show_conf: true
+show_boxes: true
+line_width: null
+format: torchscript
+keras: false
+optimize: false
+int8: false
+dynamic: false
+simplify: true
+opset: null
+workspace: null
+nms: false
+lr0: 0.01
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+box: 7.5
+cls: 0.5
+dfl: 1.5
+pose: 12.0
+kobj: 1.0
+nbs: 64
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 0.0
+translate: 0.1
+scale: 0.5
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.5
+bgr: 0.0
+mosaic: 1.0
+mixup: 0.0
+cutmix: 0.0
+copy_paste: 0.0
+copy_paste_mode: flip
+auto_augment: randaugment
+erasing: 0.4
+cfg: null
+tracker: botsort.yaml
+save_dir: /home/zhz/deepl/runs/yolo_events_v1_run
+
+================================================
+FILE: runs/yolo_synthetic_v3/args.yaml
+================================================
+
+task: detect
+mode: train
+model: /home/zhz/deepl/models/yolo11n.pt
+data: /home/zhz/deepl/output_simple_synth/dataset.yaml
+epochs: 30
+time: null
+patience: 10
+batch: 32
+imgsz: 640
+save: true
+save_period: -1
+cache: false
+device: '0'
+workers: 8
+project: /home/zhz/deepl/runs/
+name: yolo_synthetic_v3
+exist_ok: true
+pretrained: true
+optimizer: auto
+verbose: true
+seed: 0
+deterministic: true
+single_cls: false
+rect: false
+cos_lr: false
+close_mosaic: 10
+resume: false
+amp: true
+fraction: 1.0
+profile: false
+freeze: null
+multi_scale: false
+overlap_mask: true
+mask_ratio: 4
+dropout: 0.0
+val: true
+split: val
+save_json: false
+conf: null
+iou: 0.7
+max_det: 300
+half: false
+dnn: false
+plots: true
+source: null
+vid_stride: 1
+stream_buffer: false
+visualize: false
+augment: false
+agnostic_nms: false
+classes: null
+retina_masks: false
+embed: null
+show: false
+save_frames: false
+save_txt: false
+save_conf: false
+save_crop: false
+show_labels: true
+show_conf: true
+show_boxes: true
+line_width: null
+format: torchscript
+keras: false
+optimize: false
+int8: false
+dynamic: false
+simplify: true
+opset: null
+workspace: null
+nms: false
+lr0: 0.001
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+box: 7.5
+cls: 1.0
+dfl: 1.5
+pose: 12.0
+kobj: 1.0
+nbs: 64
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 20.0
+translate: 0.2
+scale: 0.2
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.5
+bgr: 0.0
+mosaic: 1.0
+mixup: 0.0
+cutmix: 0.0
+copy_paste: 0.0
+copy_paste_mode: flip
+auto_augment: randaugment
+erasing: 0.4
+cfg: null
+tracker: botsort.yaml
+save_dir: /home/zhz/deepl/runs/yolo_synthetic_v3
+
+================================================
+FILE: test.py
+================================================
+
+# 文件: validate.py
+# 职责: 加载导出的ONNX模型，对验证集中的随机图片进行推理，
+#       并将检测结果（边界框和标签）可视化地绘制出来，以供人工评估。
+
+import cv2
+import numpy as np
+import onnxruntime as ort
+import yaml
+from pathlib import Path
+import random
+
+# --- [核心配置] ---
+# 指向您刚刚导出的、需要被验证的模型
+MODEL_PATH = Path("saved/models/yolo_v1.onnx")
+
+# 指向数据准备阶段生成的 dataset.yaml 文件，以找到验证集和类别名
+DATASET_YAML_PATH = Path("data/processed/synthetic_locator_dataset/dataset.yaml") 
+
+# 在此目录中查看您模型的“答卷”
+OUTPUT_DIR = Path("validation_results")
+
+# --- [推理超参数] ---
+# 模型输入的图像尺寸
+INPUT_WIDTH = 640
+INPUT_HEIGHT = 640
+
+# 只有当模型的预测置信度高于此阈值时，才会被认为是有效检测
+CONF_THRESHOLD = 0.1
+
+# NMS（非极大值抑制）的阈值，用于合并重叠的检测框
+IOU_THRESHOLD = 0.5
+
+
+class Validator:
+    """
+    一个完整的ONNX模型可视化验证器。
+    它封装了从预处理、推理到后处理和可视化的所有步骤。
+    """
+    def __init__(self, model_path, dataset_yaml_path):
+        # 1. 加载ONNX模型并创建推理会话
+        print(f"--- 🚀 启动YOLOv1 ONNX模型可视化验证器 ---")
+        print(f"正在加载模型: {model_path}")
+        self.session = ort.InferenceSession(str(model_path), providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        print(f"模型加载成功！使用的设备: {self.session.get_providers()[0]}")
+        
+        # 2. 从dataset.yaml加载类别信息和验证集路径
+        print(f"正在加载数据集信息: {dataset_yaml_path}")
+        with open(dataset_yaml_path, 'r', encoding='utf-8') as f:
+            self.dataset_info = yaml.safe_load(f)
+        self.class_names = self.dataset_info['names']
+        print(f"成功加载 {len(self.class_names)} 个类别。")
+        
+        # 3. 准备验证图片列表
+        val_images_dir = dataset_yaml_path.parent / self.dataset_info['val']
+        self.val_image_paths = list(val_images_dir.glob("*.png")) + list(val_images_dir.glob("*.jpg"))
+        print(f"在验证集中找到 {len(self.val_image_paths)} 张图片。")
+
+    def run_validation(self, num_images_to_test=5):
+        """
+        执行验证流程。
+        """
+        if not self.val_image_paths:
+            print("❌ 错误: 验证集中没有任何图片，无法进行验证。")
+            return
+            
+        OUTPUT_DIR.mkdir(exist_ok=True)
+        print(f"\n--- 开始随机抽取 {num_images_to_test} 张图片进行验证 ---")
+        print(f"结果将保存在: {OUTPUT_DIR.resolve()}")
+
+        # 随机选择N张图片
+        selected_images = random.sample(self.val_image_paths, min(num_images_to_test, len(self.val_image_paths)))
+
+        for i, image_path in enumerate(selected_images):
+            print(f"\n[{i+1}/{num_images_to_test}] 正在处理: {image_path.name}")
+            
+            original_image = cv2.imread(str(image_path))
+            
+            # 1. 预处理
+            input_tensor, scale, pad_left, pad_top = self._preprocess(original_image)
+            
+            # 2. 推理
+            model_inputs = {self.session.get_inputs()[0].name: input_tensor}
+            model_outputs = self.session.run(None, model_inputs)
+            
+            # 3. 后处理
+            boxes, scores, class_ids = self._postprocess(model_outputs[0], scale, pad_left, pad_top, original_image.shape)
+            
+            # 4. 可视化
+            result_image = self._draw_detections(original_image, boxes, scores, class_ids)
+            
+            # 5. 保存结果
+            output_path = OUTPUT_DIR / f"result_{image_path.name}"
+            cv2.imwrite(str(output_path), result_image)
+            print(f"  -> 检测到 {len(boxes)} 个物体。结果已保存至: {output_path.name}")
+
+        print("\n--- ✅ 验证完成！ ---")
+
+    def _preprocess(self, image):
+        """将OpenCV图像转换为模型所需的输入张量。"""
+        h, w, _ = image.shape
+        
+        # 计算缩放比例和填充尺寸
+        scale = min(INPUT_WIDTH / w, INPUT_HEIGHT / h)
+        unpad_w, unpad_h = int(w * scale), int(h * scale)
+        pad_w, pad_h = INPUT_WIDTH - unpad_w, INPUT_HEIGHT - unpad_h
+        pad_left, pad_top = pad_w // 2, pad_h // 2
+        
+        # 缩放和填充
+        resized_img = cv2.resize(image, (unpad_w, unpad_h))
+        padded_img = cv2.copyMakeBorder(resized_img, pad_top, pad_h - pad_top, pad_left, pad_w - pad_left, cv2.BORDER_CONSTANT)
+        
+        # 转换为CHW格式, 归一化, 并增加Batch维度
+        input_tensor = padded_img.transpose(2, 0, 1).astype(np.float32) / 255.0
+        input_tensor = np.expand_dims(input_tensor, axis=0)
+        
+        return input_tensor, scale, pad_left, pad_top
+
+    def _postprocess(self, output, scale, pad_left, pad_top, original_shape):
+        """解码YOLO模型的原始输出，执行NMS，并将坐标映射回原始图像。"""
+        # [1, 72, 8400] -> [1, 8400, 72]
+        output = np.transpose(output, (0, 2, 1))[0]
+        
+        boxes, scores, class_ids = [], [], []
+        
+        for row in output:
+            # [cx, cy, w, h, class_prob_0, class_prob_1, ...]
+            class_probs = row[4:]
+            class_id = np.argmax(class_probs)
+            confidence = class_probs[class_id]
+            
+            if confidence > CONF_THRESHOLD:
+                cx, cy, w, h = row[:4]
+                
+                # 将中心点坐标和宽高转换为左上角和右下角坐标
+                x1 = int((cx - w / 2 - pad_left) / scale)
+                y1 = int((cy - h / 2 - pad_top) / scale)
+                x2 = int((cx + w / 2 - pad_left) / scale)
+                y2 = int((cy + h / 2 - pad_top) / scale)
+                
+                boxes.append([x1, y1, x2 - x1, y2 - y1]) # NMS需要 (x, y, w, h) 格式
+                scores.append(float(confidence))
+                class_ids.append(class_id)
+        
+        # 应用非极大值抑制 (NMS)
+        indices = cv2.dnn.NMSBoxes(boxes, scores, CONF_THRESHOLD, IOU_THRESHOLD)
+        
+        final_boxes, final_scores, final_class_ids = [], [], []
+        if len(indices) > 0:
+            for i in indices.flatten():
+                final_boxes.append(boxes[i])
+                final_scores.append(scores[i])
+                final_class_ids.append(class_ids[i])
+                
+        return final_boxes, final_scores, final_class_ids
+
+    def _draw_detections(self, image, boxes, scores, class_ids):
+        """在图像上绘制检测结果。"""
+        for box, score, class_id in zip(boxes, scores, class_ids):
+            x, y, w, h = box
+            
+            # 获取类别名和颜色
+            label = self.class_names.get(class_id, f"ID:{class_id}")
+            color = (0, 255, 0) # 绿色
+            
+            # 绘制边界框
+            cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
+            
+            # 准备标签文本
+            text = f"{label}: {score:.2f}"
+            
+            # 绘制标签背景
+            (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            cv2.rectangle(image, (x, y - text_h - 5), (x + text_w, y), color, -1)
+            
+            # 绘制标签文字
+            cv2.putText(image, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+            
+        return image
+
+
+if __name__ == "__main__":
+    if not MODEL_PATH.exists():
+        print(f"❌ 错误: 模型文件未找到: {MODEL_PATH}")
+    elif not DATASET_YAML_PATH.exists():
+        print(f"❌ 错误: 数据集配置文件未找到: {DATASET_YAML_PATH}")
+    else:
+        validator = Validator(MODEL_PATH, DATASET_YAML_PATH)
+        validator.run_validation(num_images_to_test=10) # 您可以修改这里来测试更多图片
+================================================
+FILE: tools/data_inspector.py
+================================================
+
+# 文件: /home/zhz/deepl/tools/data_inspector.py
+# 职责: 扫描指定的标注数据源，统计所有类别的实例数量，
+#       并生成一份稀缺类别清单，用于指导后续的数据合成。
+
+import json
+from pathlib import Path
+from collections import Counter
+import argparse
+from tqdm import tqdm
+
+# --- [核心配置] ---
+# 脚本会自动计算项目根目录
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# 【请确认】这里指向您整合了所有真实数据的源文件夹
+DATA_SOURCE_DIR = PROJECT_ROOT / "data/raw/real_data_combined_v1"
+
+# 【可调整】当一个类别的样本数量低于此阈值时，它将被列为“稀缺类别”
+DEFAULT_SCARCITY_THRESHOLD = 20
+
+def analyze_class_distribution(data_dir: Path, threshold: int):
+    """
+    分析指定目录中所有LabelMe .json文件的类别分布。
+    """
+    print("--- 🚀 启动数据集类别分布分析器 ---")
+    if not data_dir.is_dir():
+        print(f"❌ 错误: 找不到数据源目录: {data_dir}")
+        return
+
+    json_files = list(data_dir.glob("*.json"))
+    if not json_files:
+        print(f"❌ 错误: 在 {data_dir} 中未找到任何 .json 文件。")
+        return
+
+    print(f"🔍 正在扫描 {len(json_files)} 个标注文件...")
+
+    class_counter = Counter()
+
+    for json_path in tqdm(json_files, desc="分析进度"):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            for shape in data.get('shapes', []):
+                label_with_prefix = shape.get('label', '')
+                if not label_with_prefix:
+                    continue
+                
+                # 【关键】使用与训练时完全相同的解析逻辑！
+                # 从 '1a-陪练' 或 '1-unit-enemy-mob-大海龟' 中解析出核心类别名
+                class_name = label_with_prefix.rsplit('-', 1)[-1]
+                class_counter[class_name] += 1
+        except Exception as e:
+            print(f"\n⚠️ 警告: 处理文件 {json_path.name} 时出错: {e}")
+
+    if not class_counter:
+        print("❌ 分析完成，但未统计到任何类别。请检查您的.json文件内容。")
+        return
+        
+    print("\n" + "="*80)
+    print("--- ✅ 数据集类别分布分析报告 ---")
+    print(f"   - 扫描目录: {data_dir}")
+    print(f"   - 总计发现 {len(class_counter)} 个独立类别。")
+    print("="*80)
+
+    # 1. 打印完整的类别分布情况
+    print("\n--- [完整类别分布] (按数量降序) ---")
+    print(f"{'排名':<5} | {'类别名称':<20} | {'实例数量':<10}")
+    print("-" * 45)
+    for i, (class_name, count) in enumerate(class_counter.most_common()):
+        print(f"{i+1:<5} | {class_name:<20} | {count:<10}")
+
+    # 2. 筛选并打印稀缺类别清单
+    print("\n" + "="*80)
+    print(f"--- [稀缺类别清单] (样本数 < {threshold}) ---")
+    print("="*80)
+    
+    scarce_classes = []
+    for class_name, count in sorted(class_counter.items(), key=lambda item: item[1]):
+        if count < threshold:
+            scarce_classes.append(class_name)
+            print(f"   - {class_name:<20} | 仅有 {count} 个样本")
+
+    if not scarce_classes:
+        print("🎉 恭喜！没有发现任何低于阈值的稀缺类别。")
+    
+    # 3. 输出最终可用的清单
+    print("\n" + "="*80)
+    print("--- 📋 [最终稀缺类别清单] (可直接用于指导数据合成) ---")
+    print("="*80)
+    print(scarce_classes)
+    print("\n--- 分析完成 ---")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="分析LabelMe数据集的类别分布并找出稀缺类别。")
+    parser.add_argument(
+        '-t', '--threshold', 
+        type=int, 
+        default=DEFAULT_SCARCITY_THRESHOLD,
+        help=f"定义稀缺类别的数量阈值 (默认: {DEFAULT_SCARCITY_THRESHOLD})"
+    )
+    args = parser.parse_args()
+    
+    analyze_class_distribution(DATA_SOURCE_DIR, args.threshold)
+================================================
+FILE: tools/data_synthesizer.py
+================================================
+
+# 文件: /home/zhz/deepl/tools/data_synthesizer.py (V3.3 - 按清单轮询最终版)
+# 职责: 严格按照稀缺类别清单进行轮询生成，确保每个稀缺类别都有充足的样本。
+
+import cv2
+import numpy as np
+import yaml
+from pathlib import Path
+import random
+import shutil
+from tqdm import tqdm
+import sys
+import json
+from itertools import cycle
+
+# --- 路径设置与模块导入 ---
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+from utils.constants import CLASS_TO_ID, ID_TO_CLASS
+
+# --- 辅助函数 (保持不变) ---
+def paste_foreground(bg_rgba, fg_rgba, pos):
+    x, y = int(pos[0]), int(pos[1])
+    fg_h, fg_w = fg_rgba.shape[:2]
+    bg_h, bg_w = bg_rgba.shape[:2]
+    x_start_on_bg = max(x, 0); y_start_on_bg = max(y, 0)
+    x_end_on_bg = min(x + fg_w, bg_w); y_end_on_bg = min(y + fg_h, bg_h)
+    if x_start_on_bg >= x_end_on_bg or y_start_on_bg >= y_end_on_bg: return bg_rgba
+    fg_x_start = x_start_on_bg - x; fg_y_start = y_start_on_bg - y
+    fg_x_end = x_end_on_bg - x; fg_y_end = y_end_on_bg - y
+    fg_cropped = fg_rgba[fg_y_start:fg_y_end, fg_x_start:fg_x_end]
+    bg_roi = bg_rgba[y_start_on_bg:y_end_on_bg, x_start_on_bg:x_end_on_bg]
+    fg_alpha = fg_cropped[:, :, 3] / 255.0
+    alpha_mask = np.dstack([fg_alpha] * 3)
+    blended_rgb = (fg_cropped[:, :, :3] * alpha_mask) + (bg_roi[:, :, :3] * (1 - alpha_mask))
+    bg_roi[:, :, :3] = blended_rgb.astype(bg_rgba.dtype)
+    return bg_rgba
+
+# --- 主合成器类 ---
+class DataSynthesizer:
+    def __init__(self, config_path, synth_config_path, scarce_class_list):
+        with open(config_path, 'r', encoding='utf-8') as f: self.config = json.load(f)
+        with open(synth_config_path, 'r', encoding='utf-8') as f: self.synth_config = yaml.safe_load(f)
+        
+        self.scarce_classes = scarce_class_list
+        # 【核心】创建一个无限循环的迭代器，用于轮询稀缺类别
+        self.scarce_class_cycler = cycle(self.scarce_classes)
+
+        self.paths = self.config['data_paths']
+        self.assets_dir = Path(self.paths['synthetic_assets_dir'])
+        self.bg_dir = Path(self.paths['synthetic_backgrounds_dir'])
+        self.output_dir = Path(self.paths['synthetic_output_dir'])
+        
+        self.assets = self._load_assets()
+        self.backgrounds = self._load_backgrounds()
+        # 【核心】按类别前缀对素材key进行预分类，方便查找
+        self.asset_keys_by_prefix = self._classify_asset_keys()
+
+    def _load_assets(self):
+        # ... (此函数保持 V3.1 版本不变) ...
+        print("--- 正在加载资产库... ---")
+        assets = {}
+        asset_files = list(self.assets_dir.glob("**/*.png"))
+        if not asset_files: raise FileNotFoundError(f"错误：在资产目录 {self.assets_dir} 中找不到任何 .png 文件。")
+        for path in tqdm(asset_files, desc="加载前景资产"):
+            full_key = path.parent.name
+            asset_img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            if asset_img is None or len(asset_img.shape) < 3 or asset_img.shape[2] != 4: continue
+            if full_key not in assets: assets[full_key] = []
+            assets[full_key].append(asset_img)
+        print(f"✅ 成功加载 {len(assets)} 个类别的资产。")
+        return assets
+
+    def _load_backgrounds(self):
+        # ... (此函数保持 V3.1 版本不变) ...
+        print("--- 正在加载背景库... ---")
+        backgrounds = {}
+        for bg_type in ['combat', 'ui']:
+            backgrounds[bg_type] = []
+            bg_paths = list((self.bg_dir / bg_type).glob("*.png"))
+            for path in bg_paths:
+                img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+                if img is None: continue
+                if len(img.shape) < 3 or img.shape[2] == 3: img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+                backgrounds[bg_type].append(img)
+        print(f"✅ 成功加载 {len(backgrounds['combat'])} 张战斗背景和 {len(backgrounds['ui'])} 张UI背景。")
+        return backgrounds
+
+    def _classify_asset_keys(self):
+        """对所有资产的key按前缀进行分类，方便快速查找。"""
+        classified_keys = {
+            '1-unit-enemy': [], '1-unit-friendly-player': [], '1-unit-friendly-pet': [],
+            '5-skill-player': []
+        }
+        for key in self.assets.keys():
+            if key.startswith('1-unit-enemy'): classified_keys['1-unit-enemy'].append(key)
+            elif key.startswith('1-unit-friendly-player'): classified_keys['1-unit-friendly-player'].append(key)
+            elif key.startswith('1-unit-friendly-pet'): classified_keys['1-unit-friendly-pet'].append(key)
+            elif key.startswith('5-skill-player'): classified_keys['5-skill-player'].append(key)
+        return classified_keys
+    
+    def _generate_number_image(self, value: int, digit_assets: list) -> np.ndarray:
+        """
+        根据给定的数值，动态生成一个多位数的图像。
+        :param value: 要生成的数字，例如 378
+        :param digit_assets: 包含 0-9 单个数字图像的列表
+        :return: 拼接好的、包含整个数字的 RGBA 图像
+        """
+        s_value = str(value)
+        # 确保我们能正确地根据数字找到对应的图片
+        # 假设 digit_assets[0] 是 0.png, digit_assets[1] 是 1.png ...
+        digit_images = [digit_assets[int(d)] for d in s_value]
+
+        total_width = sum(img.shape[1] for img in digit_images)
+        max_height = max(img.shape[0] for img in digit_images)
+
+        stitched_image = np.zeros((max_height, total_width, 4), dtype=np.uint8)
+
+        current_x = 0
+        for img in digit_images:
+            h, w = img.shape[:2]
+            # 将每个数字画在底部对齐
+            y_offset = max_height - h
+            stitched_image[y_offset:y_offset+h, current_x:current_x+w] = img
+            current_x += w
+            
+        return stitched_image
+
+
+    def generate(self):
+        # ... (此函数保持 V3.1 版本不变) ...
+        print(f"--- [数据合成] 开始生成数据集至: {self.output_dir} ---")
+        if self.output_dir.exists(): shutil.rmtree(self.output_dir)
+        img_train_dir = self.output_dir / "images/train"; lbl_train_dir = self.output_dir / "labels/train"
+        img_val_dir = self.output_dir / "images/val"; lbl_val_dir = self.output_dir / "labels/val"
+        img_train_dir.mkdir(parents=True); lbl_train_dir.mkdir(parents=True)
+        img_val_dir.mkdir(parents=True); lbl_val_dir.mkdir(parents=True)
+        num_to_generate = self.synth_config['num_images_to_generate']
+        val_split_ratio = 0.1
+        num_val = int(num_to_generate * val_split_ratio)
+        for i in tqdm(range(num_to_generate), desc="生成合成图像"):
+            bg, yolo_labels = self._generate_single_scene()
+            img_name, label_name = f"synth_scarce_{i:06d}.png", f"synth_scarce_{i:06d}.txt"
+            target_img_dir = img_val_dir if i < num_val else img_train_dir
+            target_lbl_dir = lbl_val_dir if i < num_val else lbl_train_dir
+            cv2.imwrite(str(target_img_dir / img_name), cv2.cvtColor(bg, cv2.COLOR_BGRA2BGR))
+            with open(target_lbl_dir / label_name, 'w', encoding='utf-8') as f:
+                f.write("\n".join(yolo_labels))
+        self._create_dataset_yaml()
+        print(f"✅ [数据合成] 任务完成！")
+    
+    # --- 【核心重构】生成逻辑 ---
+    def _generate_single_scene(self):
+        bg = random.choice(self.backgrounds['combat']).copy()
+        self.current_yolo_labels = []
+
+        # 【核心策略】从稀缺类别清单中轮流取出一个作为本图的主角
+        target_class_name = next(self.scarce_class_cycler)
+        
+        # 查找这个主角对应的完整素材key (e.g., '血条' -> '2-status-healthbar-血条')
+        target_asset_key = None
+        for key in self.assets.keys():
+            if key.endswith(target_class_name):
+                target_asset_key = key
+                break
+        
+        # 渲染场景
+        if target_asset_key:
+            if target_asset_key.startswith('1-unit'): # 如果主角是作战单位
+                self._place_units_with_target(bg, target_asset_key)
+            elif target_asset_key.startswith('5-skill'): # 如果主角是技能
+                self._place_units_and_ui_with_target_skill(bg, target_asset_key)
+            else: # 其他类别（如血条、数值、物品等）
+                # 简化处理：先放置常规作战单位作为“背景板”
+                self._place_units_in_formation(bg)
+                # 然后想办法放置主角（这里需要根据类别进一步细化规则）
+                # 例如，如果是血条，就强制附加给一个友方单位
+                if target_class_name == '血条':
+                    # (此处省略强制附加血条的逻辑)
+                    pass
+
+        # 如果没有找到主角素材或规则，则按常规方式生成
+        else:
+            self._place_units_in_formation(bg)
+            if self.synth_config['ui_occlusion']['enabled'] and random.random() < self.synth_config['ui_occlusion']['probability']:
+                self._apply_ui_occlusion(bg)
+
+        return bg, self.current_yolo_labels
+
+    def _place_units_with_target(self, bg, target_unit_key):
+        """生成一张必须包含 target_unit_key 的战斗场景。"""
+        # 1. 放置其他随机单位作为陪衬
+        self._place_units_in_formation(bg, exclude_key=target_unit_key)
+        # 2. 在一个随机的、合适的槽位，强制放置主角单位
+        slots = self.synth_config['placement_rules']['formation_slots']
+        if 'enemy' in target_unit_key:
+            target_slot = random.choice(slots['enemy_back'] + slots['enemy_front'])
+        else:
+            target_slot = random.choice(slots['friendly_back'] + slots['friendly_front'])
+        self._place_single_unit(bg, target_unit_key, target_slot)
+
+    def _place_units_and_ui_with_target_skill(self, bg, target_skill_key):
+        """生成一张必须包含 target_skill_key 的UI遮挡场景。"""
+        # 1. 先放置作战单位
+        self._place_units_in_formation(bg)
+        # 2. 强制应用UI遮挡，并确保主角技能出现
+        self._apply_ui_occlusion(bg, force_skill_key=target_skill_key)
+
+    def _place_units_in_formation(self, bg, exclude_key=None):
+        # ... (此函数与V3.1版本基本一致, 只是增加了exclude_key参数) ...
+        cfg = self.synth_config
+        enemy_keys = [k for k in self.asset_keys_by_prefix['1-unit-enemy'] if k != exclude_key]
+        player_keys = [k for k in self.asset_keys_by_prefix['1-unit-friendly-player'] if k != exclude_key]
+        pet_keys = [k for k in self.asset_keys_by_prefix['1-unit-friendly-pet'] if k != exclude_key]
+        if not enemy_keys or not player_keys or not pet_keys: return
+        num_enemies = random.randint(cfg['unit_density']['min_enemy_units'], cfg['unit_density']['max_enemy_units'])
+        enemy_slots = cfg['placement_rules']['formation_slots']['enemy_back'] + cfg['placement_rules']['formation_slots']['enemy_front']
+        random.shuffle(enemy_slots)
+        for i in range(min(num_enemies, len(enemy_slots))):
+            self._place_single_unit(bg, random.choice(enemy_keys), enemy_slots[i])
+        self._place_single_unit(bg, random.choice(player_keys), random.choice(cfg['placement_rules']['formation_slots']['friendly_back']))
+        self._place_single_unit(bg, random.choice(pet_keys), random.choice(cfg['placement_rules']['formation_slots']['friendly_front']))
+
+    def _place_single_unit(self, bg, unit_key, roi):
+        # ... (此函数与V3.1版本完全一致) ...
+        unit_asset = random.choice(self.assets[unit_key]).copy()
+        if 'friendly' in unit_key: unit_asset = cv2.flip(unit_asset, 1)
+        h, w = unit_asset.shape[:2]
+        x1, y1, x2, y2 = roi
+        place_x = random.randint(x1, x2)
+        place_y = random.randint(y1, y2)
+        top_left_x = place_x - w // 2
+        top_left_y = place_y - h
+        bg = paste_foreground(bg, unit_asset, (top_left_x, top_left_y))
+        unit_box = (top_left_x, top_left_y, top_left_x + w, top_left_y + h)
+        self._add_yolo_label_and_events(bg, unit_key, unit_box)
+
+    def _add_yolo_label_and_events(self, bg, unit_key, unit_box):
+        # --- 添加单位本身的标签 (逻辑不变) ---
+        class_name = unit_key.rsplit('-', 1)[-1]
+        if class_name in CLASS_TO_ID: self._add_yolo_label(class_name, unit_box)
+        
+        # --- 关联血条 (逻辑不变) ---
+        hb_cfg = self.synth_config['healthbar_association']
+        if 'friendly' in unit_key and hb_cfg['enabled'] and random.random() < hb_cfg['probability']:
+            if '2-status-healthbar-血条' in self.assets:
+                healthbar_asset = random.choice(self.assets['2-status-healthbar-血条'])
+                hb_h, hb_w = healthbar_asset.shape[:2]
+                unit_center_x = (unit_box[0] + unit_box[2]) / 2
+                hb_x = int(unit_center_x - hb_w / 2)
+                hb_y = int(unit_box[1] + hb_cfg['vertical_offset'])
+                bg = paste_foreground(bg, healthbar_asset, (hb_x, hb_y))
+                self._add_yolo_label('血条', (hb_x, hb_y, hb_x + hb_w, hb_y + hb_h))
+
+        # --- 【核心升级 V4】关联悬浮数值 (支持伤害与治疗) ---
+        num_cfg = self.synth_config['damage_number_association']
+        # 首先，判断本次是否要生成悬浮数值
+        if not (num_cfg['enabled'] and random.random() < num_cfg['probability']):
+            return # 如果不生成，则提前结束函数
+
+        # 1. 【新增】根据配置的概率，决定是生成治疗(heal)还是伤害(damage)
+        heal_prob = num_cfg.get('heal_probability', 0.3) # 如果配置里没写，默认30%概率
+        is_heal = random.random() < heal_prob
+        
+        # 根据决定，选择正确的“零件盒”
+        digit_assets = None
+        if is_heal and '3-digits-heal' in self.assets:
+            digit_assets = self.assets['3-digits-heal']
+        elif not is_heal and '3-digits-damage' in self.assets:
+            digit_assets = self.assets['3-digits-damage']
+        
+        # 如果对应的零件盒不存在，则无法继续
+        if digit_assets is None:
+            return
+
+        # 2. 按 3:4:3 权重生成2、3、4位数 (逻辑不变)
+        num_digits_choices = [2, 3, 4]; weights = [0.3, 0.4, 0.3]
+        chosen_digits = random.choices(num_digits_choices, weights=weights, k=1)[0]
+        if chosen_digits == 2: min_val, max_val = 10, 99
+        elif chosen_digits == 3: min_val, max_val = 100, 999
+        else: min_val, max_val = 1000, 9999
+        value_to_generate = random.randint(min_val, max_val)
+        
+        # 3. 动态生成数值图片 (逻辑不变)
+        number_image = self._generate_number_image(value_to_generate, digit_assets)
+        num_h, num_w = number_image.shape[:2]
+
+        # 4. 身体中心定位逻辑 (逻辑不变)
+        unit_x1, unit_y1, unit_x2, unit_y2 = unit_box
+        unit_w = unit_x2 - unit_x1
+        unit_h = unit_y2 - unit_y1
+        unit_center_x = unit_x1 + unit_w / 2
+        unit_center_y = unit_y1 + unit_h / 2
+        horizontal_jitter = unit_w * random.uniform(-0.1, 0.1)
+        num_x = int(unit_center_x - num_w / 2 + horizontal_jitter)
+        jitter_range = (unit_h / 2) * num_cfg.get('body_center_jitter_ratio', 0.4)
+        vertical_jitter = random.uniform(-jitter_range, jitter_range)
+        num_y = int(unit_center_y - num_h / 2 + vertical_jitter)
+
+        # 5. 粘贴并打标签 (逻辑不变)
+        # 无论红色还是绿色，它们的类别都是“悬浮数值”
+        bg = paste_foreground(bg, number_image, (num_x, num_y))
+        self._add_yolo_label('悬浮数值', (num_x, num_y, num_x + num_w, num_y + num_h))
+
+    def _apply_ui_occlusion(self, bg, force_skill_key=None):
+        # ... (此函数与V3.2版本基本一致, 只是增加了force_skill_key参数) ...
+        cfg = self.synth_config['ui_occlusion']
+        if not self.backgrounds['ui']: return
+        panel_asset = random.choice(self.backgrounds['ui']).copy()
+        panel_roi = cfg['panel_roi']
+        skill_keys = [k for k in self.asset_keys_by_prefix['5-skill-player'] if k != force_skill_key]
+        random.shuffle(skill_keys)
+        if force_skill_key: skill_keys.insert(0, force_skill_key) # 确保主角技能被优先放置
+        slots = cfg['skill_slots_relative']
+        num_to_show = random.randint(*cfg['num_skills_to_show_range'])
+        for i in range(min(num_to_show, len(slots), len(skill_keys))):
+            skill_asset = random.choice(self.assets[skill_keys[i]])
+            slot_roi = slots[i]
+            asset_h, asset_w = skill_asset.shape[:2]
+            x_range_max = slot_roi[2] - asset_w
+            y_range_max = slot_roi[3] - asset_h
+            place_x = slot_roi[0] if slot_roi[0] >= x_range_max else random.randint(slot_roi[0], x_range_max)
+            place_y = slot_roi[1] if slot_roi[1] >= y_range_max else random.randint(slot_roi[1], y_range_max)
+            panel_asset = paste_foreground(panel_asset, skill_asset, (place_x, place_y))
+            global_x = panel_roi[0] + place_x
+            global_y = panel_roi[1] + place_y
+            self._add_yolo_label(skill_keys[i].rsplit('-', 1)[-1], 
+                                (global_x, global_y, global_x + asset_w, global_y + asset_h))
+        bg = paste_foreground(bg, panel_asset, (panel_roi[0], panel_roi[1]))
+
+    # --- 【关键】重新添加被误删的 _add_yolo_label 函数 ---
+    def _add_yolo_label(self, class_name, box):
+        if class_name not in CLASS_TO_ID: return
+        class_id = CLASS_TO_ID[class_name]
+        x1, y1, x2, y2 = box
+        bg_w, bg_h = self.synth_config['output_image_size']
+        cx = (x1 + x2) / 2 / bg_w; cy = (y1 + y2) / 2 / bg_h
+        w = (x2 - x1) / bg_w; h = (y2 - y1) / bg_h
+        self.current_yolo_labels.append(f"{class_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+
+    def _create_dataset_yaml(self):
+        # ... (此函数保持 V3.1 版本不变) ...
+        dataset_yaml_data = {'path': str(self.output_dir.resolve()), 'train': 'images/train', 'val': 'images/val', 'names': ID_TO_CLASS}
+        with open(self.output_dir / "dataset.yaml", 'w', encoding='utf-8') as f:
+            yaml.dump(dataset_yaml_data, f, sort_keys=False, allow_unicode=True)
+        print(f"✅ 已创建数据集配置文件: {self.output_dir / 'dataset.yaml'}")
+
+if __name__ == '__main__':
+    scarce_class_list_from_inspector = [
+        '天龙水', '书信', '龙卷雨击', '笛子', '确认按钮', '金刚护法', '唧唧歪歪', 
+        '推气过宫', '雷鸟人', '横扫千军', '狡猾的貔貅', '通知栏', '九转金丹', 
+        '鬼切草', '凤凰', '天将', '大蝙蝠', '地狱战神', '四叶花', '佛手', 
+        '龟丞相', '白熊', '牛刀小试', '高级宠物口粮', '护卫', '洞冥草', 
+        '海毛虫', '桃花', '包子', '赌徒', '宠物口粮', '树怪', '野猪', 
+        '仙狐涎', '巨蛙', '绿芦羹', '佛光舍利子', '山贼', '月见草', '红罗羹',
+        '血条', '悬浮数值'
+    ]
+    synthesizer = DataSynthesizer(
+        config_path=PROJECT_ROOT / 'config.json',
+        synth_config_path=PROJECT_ROOT / 'configs/synthesis_config.yaml',
+        scarce_class_list=scarce_class_list_from_inspector
+    )
+    synthesizer.generate()
+================================================
+FILE: train.py
+================================================
+
+# 文件: train.py (V3 - 优雅架构最终版)
+import argparse
+import json
+from pathlib import Path
+
+# 【核心】我们在这里定义一个项目级的约定：所有配置文件都放在 configs 目录下
+CONFIG_DIR = Path("configs")
+
+# 导入 Trainer 时不再需要复杂的 sys.path 操作，因为它应该是一个可安装的包或有正确的 __init__.py
+from trainer.trainer import Trainer
+
+def main(config, task_name):
+    task_config = config['tasks'][task_name]
+    print(f"\n--- 启动训练任务: {task_config['description']} ---")
+
+    # [步骤 1/1] 初始化并启动训练器
+    print("\n[Step 1/1] 初始化并启动训练器...")
+    
+    # 【核心修正】路径拼接的逻辑被统一收归于此，健壮且不易出错
+    # 1. 从主配置中获取纯粹的文件名
+    config_filename = task_config['yolo_config_path']
+    # 2. 与我们约定的配置目录进行拼接
+    yolo_config_path = CONFIG_DIR / config_filename
+
+    trainer_instance = Trainer(yolo_config_path)
+    trainer_instance.train()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='MHXY AI Model Factory')
+    parser.add_argument('-c', '--config', default='config.json', type=str,
+                      help='Path to the main configuration file (default: config.json)')
+    parser.add_argument('-t', '--task', type=str, required=True, choices=['detector', 'classifier'],
+                      help='Name of the task to run (detector or classifier)')
+    
+    args = parser.parse_args()
+    
+    config_path = Path(args.config)
+    if not config_path.is_file():
+        print(f"❌ 错误: 找不到配置文件 '{config_path}'")
+    else:
+        config = json.loads(config_path.read_text())
+        main(config, args.task)
+================================================
+FILE: trainer/__init__.py
+================================================
+
+
+================================================
+FILE: trainer/trainer.py
+================================================
+
+# 文件: trainer/main_trainer.py (重构版)
+import yaml
+from ultralytics import YOLO
+from pathlib import Path
+import shutil
+
+class Trainer:
+    def __init__(self, yolo_config_path: str):
+        """
+        初始化训练器。
+        :param yolo_config_path: 指向特定任务的YOLO .yaml配置文件的路径。
+        """
+        self.yolo_config_path = Path(yolo_config_path)
+        if not self.yolo_config_path.is_file():
+            raise FileNotFoundError(f"YOLO配置文件未找到: {self.yolo_config_path}")
+            
+        with open(self.yolo_config_path, 'r') as f:
+            self.yolo_config = yaml.safe_load(f)
+        
+        self.model = YOLO(self.yolo_config.get('model', 'yolo11n.pt'))
+
+    def train(self):
+        """
+        使用加载的配置启动YOLOv8训练。
+        """
+        print(f"--- 使用配置文件 '{self.yolo_config_path.name}' 开始训练 ---")
+        self.yolo_config.pop('names', None)
+        self.model.train(**self.yolo_config)
+        print("--- ✅ 训练完成 ---")
+        
+        # 训练完成后自动调用导出流程
+        self.export_model()
+
+# 文件: trainer/trainer.py
+
+    def export_model(self, model_to_export=None):
+        """
+        以“黄金标准”原则导出指定的或训练好的最佳模型为ONNX格式。
+        【最终修正】永久禁用 simplify=True 以避免环境兼容性导致的底层崩溃。
+        """
+        if model_to_export:
+            model = YOLO(model_to_export)
+            print(f"\n🚀 正在导出指定的模型: {model_to_export}")
+        else:
+            model = self.model
+            best_model_path = Path(model.trainer.best)
+            print(f"\n🏆 训练出的最佳模型: {best_model_path}")
+        
+        task_type = self.yolo_config.get('task', 'detect')
+        
+        if task_type == 'detect':
+            print("🚀 正在以【最高兼容性】模式导出检测器模型...")
+            target_name = "yolov11.onnx"
+            export_params = {
+                'format': 'onnx',
+                'opset': 13,         
+                'simplify': False,  # 【核心修正】禁用此项
+                'nms': False,       
+                'dynamic': False,     
+                'batch': 1,          
+                'imgsz': self.yolo_config.get('imgsz', 640)
+            }
+        # ... (classify 部分保持不变)
+        elif task_type == 'classify':
+            print("🚀 正在导出分类器模型...")
+            target_name = "guaiwu_classifier.onnx"
+            export_params = {
+                'format': 'onnx',
+                'opset': 12,
+                'simplify': False, # 【核心修正】同样禁用
+                'imgsz': self.yolo_config.get('imgsz', 64)
+            }
+        else:
+            print(f"⚠️ 警告: 未知的任务类型 '{task_type}'，跳过模型导出。")
+            return
+
+        try:
+            onnx_path = model.export(**export_params)
+            target_onnx_path = Path("saved/models") / target_name
+            target_onnx_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(onnx_path), str(target_onnx_path))
+            
+            print("\n" + "="*50)
+            print("✅ 导出成功！")
+            print(f"   已生成模型: {target_onnx_path}")
+            print("="*50)
+        except Exception as e:
+            print(f"\n--- ❌ 导出失败！错误: {e} ---")
+            import traceback
+            traceback.print_exc()
+================================================
+FILE: utils/__init__.py
+================================================
+
+
+================================================
+FILE: utils/constants.py
+================================================
+
+# 文件: /home/zhz/deepl/utils/constants.py (V7.0 - 动态YAML加载器最终版)
+# 职责: 提供一个健壮的工具，用于从YOLOv8训练配置文件(.yaml)中动态加载类别信息。
+#       本模块不再是静态的“事实来源”，而是一个动态的、按需服务的“信息解析器”。
+
+import yaml
+from pathlib import Path
+from typing import Dict, Tuple, List
+
+def get_class_maps_from_yolo_config(yolo_config_path: Path) -> Tuple[Dict[str, int], Dict[int, str]]:
+    """
+    从指定的YOLO配置文件中读取'names'字段，并生成类别到ID和ID到类别的映射。
+
+    该函数具有高鲁棒性，能够智能处理两种常见的 'names' 格式:
+    1. 字典格式 (YOLOv8 推荐): {0: 'cat', 1: 'dog'}
+    2. 列表格式 (旧版YOLOv5兼容): ['cat', 'dog']
+
+    Args:
+        yolo_config_path (Path): 指向YOLO训练配置 .yaml 文件的路径对象。
+
+    Returns:
+        A tuple containing:
+        - class_to_id (Dict[str, int]): A dictionary mapping class names to IDs.
+        - id_to_class (Dict[int, str]): A dictionary mapping IDs to class names.
+        
+    Raises:
+        FileNotFoundError: 如果配置文件不存在。
+        KeyError: 如果配置文件中缺少 'names' 字段。
+        ValueError: 如果 'names' 字段为空或格式不正确。
+    """
+    print(f"--- [类别加载] 动态加载类别来源: {yolo_config_path.name} ---")
+    if not yolo_config_path.is_file():
+        raise FileNotFoundError(f"❌ 错误: 动态类别源文件未找到: {yolo_config_path}")
+
+    with open(yolo_config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+
+    if 'names' not in config:
+        raise KeyError(f"❌ 错误: 在 {yolo_config_path.name} 中未找到关键的 'names' 字段。")
+
+    names_data = config['names']
+    if not names_data:
+        raise ValueError(f"❌ 错误: 'names' 字段在 {yolo_config_path.name} 中为空。")
+
+    # --- 核心逻辑: 智能解析 'names' ---
+    if isinstance(names_data, dict):
+        # YOLOv8 格式: {0: 'name1', 1: 'name2'}
+        id_to_class = dict(sorted(names_data.items())) # 确保ID有序
+        class_to_id = {name: i for i, name in id_to_class.items()}
+    elif isinstance(names_data, list):
+        # YOLOv5 兼容格式: ['name1', 'name2']
+        id_to_class = {i: name for i, name in enumerate(names_data)}
+        class_to_id = {name: i for i, name in id_to_class.items()}
+    else:
+        raise TypeError(f"❌ 错误: 'names' 字段的格式无法识别。期望是字典或列表，但得到的是 {type(names_data)}。")
+
+    print(f"✅ [类别加载] 成功加载 {len(id_to_class)} 个类别。")
+    return class_to_id, id_to_class

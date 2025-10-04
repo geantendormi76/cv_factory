@@ -1,42 +1,74 @@
-# 文件: train.py (V3 - 优雅架构最终版)
+# 文件: train.py (V3.1 - 最终健壮版)
+# 职责: 作为模型训练的统一入口，健壮地处理命令行参数。
+
 import argparse
 import json
 from pathlib import Path
-
-# 【核心】我们在这里定义一个项目级的约定：所有配置文件都放在 configs 目录下
-CONFIG_DIR = Path("configs")
-
-# 导入 Trainer 时不再需要复杂的 sys.path 操作，因为它应该是一个可安装的包或有正确的 __init__.py
 from trainer.trainer import Trainer
 
-def main(config, task_name):
+CONFIG_DIR = Path("configs")
+
+def main(config_path: Path, task_name: str):
+    """
+    主执行函数。
+    """
+    try:
+        config = json.loads(config_path.read_text(encoding='utf-8'))
+    except Exception as e:
+        print(f"❌ 错误: 解析配置文件 '{config_path}' 失败: {e}")
+        return
+        
+    if task_name not in config['tasks']:
+        print(f"❌ 错误: 在 '{config_path}' 中找不到任务 '{task_name}' 的定义。")
+        return
+
     task_config = config['tasks'][task_name]
     print(f"\n--- 启动训练任务: {task_config['description']} ---")
-
-    # [步骤 1/1] 初始化并启动训练器
-    print("\n[Step 1/1] 初始化并启动训练器...")
     
-    # 【核心修正】路径拼接的逻辑被统一收归于此，健壮且不易出错
-    # 1. 从主配置中获取纯粹的文件名
-    config_filename = task_config['yolo_config_path']
-    # 2. 与我们约定的配置目录进行拼接
-    yolo_config_path = CONFIG_DIR / config_filename
+    yolo_config_path = CONFIG_DIR / task_config['yolo_config_path']
 
-    trainer_instance = Trainer(yolo_config_path)
-    trainer_instance.train()
+    try:
+        trainer_instance = Trainer(yolo_config_path)
+        trainer_instance.train()
+    except Exception as e:
+        print(f"❌ 错误: 训练过程中发生失败。")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='MHXY AI Model Factory')
-    parser.add_argument('-c', '--config', default='config.json', type=str,
-                      help='Path to the main configuration file (default: config.json)')
-    parser.add_argument('-t', '--task', type=str, required=True, choices=['detector', 'classifier'],
-                      help='Name of the task to run (detector or classifier)')
+    # --- 【核心重构】与 prepare_data.py 完全对齐的解析逻辑 ---
     
-    args = parser.parse_args()
+    base_parser = argparse.ArgumentParser(add_help=False)
+    base_parser.add_argument('-c', '--config', default='config.json', type=str,
+                             help='主配置文件路径 (默认: config.json)')
     
+    args, _ = base_parser.parse_known_args()
     config_path = Path(args.config)
+
+    valid_tasks = []
+    if config_path.is_file():
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+            valid_tasks = list(config_data.get('tasks', {}).keys())
+        except Exception:
+            pass
+
+    parser = argparse.ArgumentParser(
+        description='MHXY AI Model Factory - Training',
+        parents=[base_parser]
+    )
+    parser.add_argument(
+        '-t', '--task', 
+        type=str, 
+        required=True, 
+        choices=valid_tasks if valid_tasks else None,
+        help='要运行的任务名称 (从配置文件中读取)'
+    )
+    
+    final_args = parser.parse_args()
+
     if not config_path.is_file():
         print(f"❌ 错误: 找不到配置文件 '{config_path}'")
     else:
-        config = json.loads(config_path.read_text())
-        main(config, args.task)
+        main(config_path, final_args.task)
