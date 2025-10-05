@@ -1,17 +1,19 @@
-# 文件: data_loader/detector_loader.py (V5.0 - 智能多格式版)
+# 文件: data_loader/detector_loader.py (V6.0 - 参数化解耦版)
+# 职责: 作为一个纯粹的、无状态的数据集构建工具，
+#       接收明确的输入/输出路径和类别定义，生成YOLOv8所需的标准数据集结构。
+
 import sys
 import json
 import shutil
+import yaml
 from pathlib import Path
 from tqdm import tqdm
 import numpy as np
 from sklearn.model_selection import train_test_split
-from typing import List, Dict, Optional
-import yaml
+from typing import List, Dict
+import cv2 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
-from utils.constants import get_class_maps_from_yolo_config
+# --- 辅助函数 (职责单一，保持不变) ---
 
 def _parse_labelme_json(json_path: Path, class_mapping: dict, img_h: int, img_w: int) -> List[str]:
     """解析单个LabelMe JSON文件并转换为YOLO格式字符串列表。"""
@@ -44,49 +46,57 @@ def _parse_yolo_txt(txt_path: Path) -> List[str]:
     with open(txt_path, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f.readlines() if line.strip()]
 
-def build_yolo_dataset(config: Dict):
-    data_paths = config['data_paths']
-    # 【核心修改】从新的统一任务配置中获取路径
-    task_name = config['current_task']
-    source_dir = Path(data_paths[f'{task_name}_source_dir'])
-    output_dir = Path(data_paths[f'{task_name}_output_dir'])
-    val_split_ratio = 0.2
+# --- 主构建函数 (核心重构) ---
 
-    print(f"--- [智能数据构建] 开始处理统一源: {source_dir} ---")
-    
+def build_yolo_dataset(
+    source_dir: Path, 
+    output_dir: Path, 
+    class_names: Dict[int, str], 
+    val_split_ratio: float = 0.2
+):
+    """
+    根据指定的源数据，构建一个完整的YOLOv8训练数据集。
+
+    Args:
+        source_dir (Path): 包含 .png/.jpg 和 .json/.txt 标注文件的原始数据目录。
+        output_dir (Path): 用于存放生成的 train/val 数据集的目标目录。
+        class_names (Dict[int, str]): 类别ID到名称的映射字典, 例如 {0: 'cat', 1: 'dog'}。
+        val_split_ratio (float): 验证集所占的比例。
+    """
+    print(f"--- [智能数据构建] 启动 ---")
+    print(f"   - 数据源: {source_dir}")
+    print(f"   - 输出目录: {output_dir}")
+
     if not source_dir.is_dir():
         print(f"⚠️ 警告: 源数据目录 {source_dir} 不存在，跳过。")
         return
 
-    task_config = config['tasks'][task_name]
-    yolo_config_path = PROJECT_ROOT / 'configs' / task_config['yolo_config_path']
-    
-    try:
-        CLASS_TO_ID, ID_TO_CLASS = get_class_maps_from_yolo_config(yolo_config_path)
-    except Exception as e:
-        print(f"❌ 错误: 加载类别信息失败: {e}")
-        return
+    # 【核心解耦】直接从传入的参数生成类别映射，不再依赖任何外部文件
+    if not class_names:
+        raise ValueError("错误: 必须提供 class_names 类别定义。")
+    ID_TO_CLASS = class_names
+    CLASS_TO_ID = {name: i for i, name in ID_TO_CLASS.items()}
+    print(f"   - 接收到 {len(ID_TO_CLASS)} 个类别: {list(ID_TO_CLASS.values())}")
 
+    # 准备目录结构
     if output_dir.exists():
         shutil.rmtree(output_dir)
-    (output_dir / "images/train").mkdir(parents=True); (output_dir / "images/val").mkdir(parents=True)
-    (output_dir / "labels/train").mkdir(parents=True); (output_dir / "labels/val").mkdir(parents=True)
+    (output_dir / "images/train").mkdir(parents=True)
+    (output_dir / "images/val").mkdir(parents=True)
+    (output_dir / "labels/train").mkdir(parents=True)
+    (output_dir / "labels/val").mkdir(parents=True)
 
-    # 【核心修改】现在我们遍历图片文件，而不是JSON文件
     image_files = sorted(list(source_dir.glob("*.png")) + list(source_dir.glob("*.jpg")))
     if not image_files:
-        print(f"❌ 错误: 在 {source_dir} 中未找到任何图片文件。")
-        return
+        raise FileNotFoundError(f"错误: 在 {source_dir} 中未找到任何图片文件。")
 
     train_files, val_files = train_test_split(image_files, test_size=val_split_ratio, random_state=42)
 
     for split_name, file_list in [("train", train_files), ("val", val_files)]:
         if not file_list: continue
         for image_path in tqdm(file_list, desc=f"转换 {split_name} 集"):
-            # 1. 复制图片
             shutil.copy(image_path, output_dir / f"images/{split_name}/{image_path.name}")
             
-            # 2. 【智能查找】优先找.txt，再找.json
             yolo_labels = []
             txt_path = image_path.with_suffix(".txt")
             json_path = image_path.with_suffix(".json")
@@ -94,19 +104,29 @@ def build_yolo_dataset(config: Dict):
             if txt_path.exists():
                 yolo_labels = _parse_yolo_txt(txt_path)
             elif json_path.exists():
-                # JSON解析需要图像尺寸
-                img_h, img_w = 600, 800 # 假设固定尺寸，更健壮的做法是用cv2读取
-                yolo_labels = _parse_labelme_json(json_path, CLASS_TO_ID, img_h, img_w)
+                # [关键修复] 使用cv2动态读取每张图片的真实尺寸，杜绝硬编码
+                try:
+                    img = cv2.imread(str(image_path))
+                    img_h, img_w, _ = img.shape
+                    yolo_labels = _parse_labelme_json(json_path, CLASS_TO_ID, img_h, img_w)
+                except Exception as e:
+                    print(f"\n⚠️ 警告: 读取图片 {image_path.name} 尺寸失败: {e}")
+                    continue # 跳过这张无法处理的图片
             
-            # 3. 写入标签
             if yolo_labels:
                 label_path = output_dir / f"labels/{split_name}/{image_path.stem}.txt"
                 with open(label_path, 'w', encoding='utf-8') as f:
                     f.write("\n".join(yolo_labels))
-                
-    dataset_yaml_data = {'path': str(output_dir.resolve()), 'train': 'images/train', 'val': 'images/val', 'names': ID_TO_CLASS}
+    
+    # 创建 dataset.yaml
+    dataset_yaml_data = {
+        'path': str(output_dir.resolve()), 
+        'train': 'images/train', 
+        'val': 'images/val', 
+        'names': ID_TO_CLASS
+    }
     dataset_yaml_path = output_dir / "dataset.yaml"
     with open(dataset_yaml_path, 'w', encoding='utf-8') as f:
         yaml.dump(dataset_yaml_data, f, sort_keys=False, allow_unicode=True)
     
-    print(f"✅ [智能数据构建] 统一数据集构建成功！\n   输出目录: {output_dir}")
+    print(f"✅ 数据集构建成功！配置文件: {dataset_yaml_path}")

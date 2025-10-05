@@ -8,10 +8,10 @@ __pycache__/
 /models/
 /data/
 /tests/
-
+/inspection_results/
 
 # 忽略所有数据集
-/data/raw/yolo_v1/
+/data/raw/
 
 # 忽略IDE和系统文件
 .idea/

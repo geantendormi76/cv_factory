@@ -1,0 +1,59 @@
+# ===================================================================
+# MHXY AI Model Factory - Experiment Configuration (Corrected Version)
+# ===================================================================
+
+# --- 1. 基础信息 (唯一标识一次运行) ---
+project_name: "UI_Elements"
+run_name: "ui_elements_v1_run" # 直接使用您期望的运行名称
+
+# --- 2. 任务定义 (决定使用哪种数据处理器) ---
+task_type: "detector"
+
+# --- 3. 数据流水线 (定义数据的输入与输出) ---
+source_data_dir: "/home/zhz/deepl/data/raw/yolo_ui_elements_v1" # 请确保此处指向您的实际数据
+
+# --- 4. 模型与训练 (定义模型本身和训练行为) ---
+base_model: "/home/zhz/deepl/models/yolo11n.pt" # 假设这是微调的起点
+
+# 【类别定义】 - 已移至顶层，作为数据描述的一部分，职责清晰
+class_names:
+  0: '伤害数值'
+  1: '恢复数值'
+  2: '血条'
+
+# 【YOLOv8 核心超参数】 - 只包含纯粹的训练参数
+hyperparameters:
+  # 核心设置
+  epochs: 200
+  patience: 20
+  batch: 32
+  imgsz: 640
+  device: 0
+  workers: 8
+  exist_ok: True # 允许覆盖之前的运行，这在新架构中是安全的
+
+  # 优化器与学习率
+  optimizer: 'auto'
+  lr0: 0.01
+  lrf: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+
+  # 损失函数权重
+  box: 7.5
+  cls: 1.0
+  dfl: 1.5
+
+  # 数据增强
+  degrees: 20.0
+  translate: 0.2
+  scale: 0.2
+  fliplr: 0.5
+  mosaic: 1.0
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+
+# --- 5. 产物导出 (定义最终产品的名称) ---
+onnx_output_name: "yolo_ui_elements_v1.onnx" # 建议与 run_name 保持某种关联

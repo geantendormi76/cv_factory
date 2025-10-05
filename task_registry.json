@@ -1,0 +1,14 @@
+{
+  "tasks": {
+    "detector": {
+      "description": "通用目标检测任务",
+      "data_builder_module": "data_loader.detector_loader",
+      "data_builder_func": "build_yolo_dataset"
+    },
+    "classifier": {
+      "description": "图像分类任务",
+      "data_builder_module": "data_loader.classifier_loader",
+      "data_builder_func": "generate_classifier_data"
+    }
+  }
+}
