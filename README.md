@@ -1,4 +1,3 @@
-
 # 🚀 AI 模型工厂 (MHXY AI Model Factory)
 
 欢迎使用 MHXY AI 模型工厂！
@@ -11,54 +10,74 @@
 
 ## 🎯 核心工作流 (Quick Start)
 
-对于任何一个新的训练任务，您只需要遵循以下**四个简单步骤**：
+对于任何一个新的训练任务，我们推荐遵循以下自动化流程。
 
-### **第一步：准备您的数据**
+### **第一步：准备您的数据源**
 
-将您标注好的数据（包含 `.png` 图片和对应的 `.json` 或 `.txt` 标签文件）放入一个新的文件夹中。
+获取高质量的数据是模型训练的基石。本工厂支持两种方式来准备您的数据：
 
-**位置：** `data/raw/` 目录下。
+#### **方式A：使用您自己的标注数据 (常规流程)**
 
-**示例：**
-假设您有一批新的“怪物”数据，您可以创建一个名为 `new_monsters_data` 的文件夹，并将所有相关文件放入其中：
-`deepl/data/raw/new_monsters_data/`
+如果您已经拥有标注好的数据（包含 `.png` 图片和对应的 `.json` 或 `.txt` 标签文件），请将它们统一放入一个新的文件夹中。
+
+*   **位置：** `data/raw/` 目录下。
+*   **示例：** 创建 `deepl/data/raw/my_labeled_monsters/` 目录，并将所有文件放入其中。
+
+#### **方式B：一键生成海量合成数据 (推荐)**
+
+当真实数据不足或希望模型具备更强的泛化能力时，可使用我们内置的合成工具。
+
+*   **目的：** 快速生成上万张类别均衡、背景多样、位置随机的标注数据。
+*   **工具：** `tools/combat_unit_synthesizer.py`
+*   **操作：**
+    1.  打开该脚本，在顶部的`CONFIG`区域确认您的资产（前景/背景）路径和输出路径。
+    2.  在项目根目录下运行命令：
+        ```bash
+        python tools/combat_unit_synthesizer.py
+        ```
+*   **结果：** 脚本会自动生成所有数据，并直接存放到`data/raw/`目录下（例如：`deepl/data/raw/synthetic_combat_units_v1_raw/`），**完美衔接下一步**。
+
+---
 
 ### **第二步：创建您的“实验指令单”**
 
-“实验指令单”是我们与模型工厂沟通的唯一方式。
+“实验指令单” (`.yaml` 文件) 是我们与模型工厂沟通的唯一方式。
 
-1.  **复制模板：** 在项目根目录下，找到 `run_config.template.yaml` 文件，**复制**一份并重命名。命名最好能清晰地描述您的任务。
-    *   **示例：** `train_new_monsters_v1.yaml`
+1.  **复制模板：** 在项目根目录下，找到 `run_config.template.yaml` 文件，**复制**一份并重命名（例如：`train_combat_units_v1.yaml`）。
 
-2.  **填写指令：** 打开您刚刚创建的 `.yaml` 文件，修改其中的关键信息。对于新手来说，您**至少需要修改**以下几个字段：
-    *   `project_name`: 您的项目大类 (例如: "MHXY_Monsters")。
-    *   `run_name`: 本次训练的唯一名称 (例如: "mob_detector_v1")。
-    *   `source_data_dir`: **【最重要】** 指向您在第一步中创建的数据文件夹 (例如: `"data/raw/new_monsters_data"`)。
+2.  **填写指令：** 打开您刚刚创建的 `.yaml` 文件，修改关键信息。您**至少需要修改**以下字段：
+    *   `project_name`: 您的项目大类 (例如: "Combat_Units")。
+    *   `run_name`: 本次训练的唯一名称 (例如: "units_detector_v1")。
+    *   `source_data_dir`: **【最重要】** 指向您在第一步中准备好的数据文件夹 (例如: `"data/raw/synthetic_combat_units_v1_raw"`)。
     *   `class_names`: 定义您数据中所有类别的ID和名称。
     *   `onnx_output_name`: 您希望最终产出的 `.onnx` 模型叫什么名字。
+
+---
 
 ### **第三步：启动流水线！**
 
 现在，指令已经下达。打开您的 WSL 终端，确保位于 `deepl` 项目的根目录下，然后执行以下命令：
 
 ```bash
-python pipeline.py --config train_new_monsters_v1.yaml
+python pipeline.py --config train_combat_units_v1.yaml
 ```
-*(请将 `train_new_monsters_v1.yaml` 替换为您自己的文件名)*
+*(请将 `train_combat_units_v1.yaml` 替换为您自己的文件名)*
 
 接下来，您只需要喝杯咖啡，等待流水线自动完成所有工作。
+
+---
 
 ### **第四步：收获您的模型**
 
 训练成功后，您可以在以下两个位置找到您的最终产物：
 
-1.  **训练过程产物 (.pt 模型, 日志, 训练曲线图):**
+1.  **训练过程全记录 (.pt 模型, 日志, 训练曲线图):**
     `runs/<project_name>/<run_name>/`
-    *   **示例：** `runs/MHXY_Monsters/mob_detector_v1/`
+    *   **示例：** `runs/Combat_Units/units_detector_v1/`
 
 2.  **最终可部署的 ONNX 模型:**
     `saved/models/`
-    *   **示例：** `saved/models/mob_detector_v1.onnx`
+    *   **示例：** `saved/models/combat_units_detector_v1.onnx`
 
 ---
 
@@ -70,8 +89,8 @@ python pipeline.py --config train_new_monsters_v1.yaml
 # ===================================================================
 # 基础信息 (唯一标识一次运行)
 # ===================================================================
-project_name: "MHXY_Detectors"      # 项目大类，用于在 /runs 目录下创建一级文件夹
-run_name: "ui_elements_v1_run"     # 本次运行的名称，用于创建二级文件夹
+project_name: "Combat_Units"      # 项目大类，用于在 /runs 目录下创建一级文件夹
+run_name: "units_detector_v1"     # 本次运行的名称，用于创建二级文件夹
 
 # ===================================================================
 # 任务定义 (决定使用哪种数据处理器)
@@ -81,72 +100,38 @@ task_type: "detector"              # 目前支持 "detector" (目标检测) 和 
 # ===================================================================
 # 数据流水线 (定义数据的输入)
 # ===================================================================
-source_data_dir: "data/raw/yolo_ui_elements_v1" # 【您的唯一数据输入】
+source_data_dir: "data/raw/synthetic_combat_units_v1_raw" # 【您的唯一数据输入】
 
 # ===================================================================
 # 模型与训练 (定义模型本身和训练行为)
 # ===================================================================
 # 【模型选择】
 # -> 全新训练: 使用官方预训练模型，例如 "yolov8n.pt" (Nano), "yolov8s.pt" (Small)
-# -> 微调训练: 提供之前训练产出的 .pt 模型路径，例如 "runs/MHXY_Detectors/ui_elements_v1_run/weights/best.pt"
+# -> 微调训练: 提供之前训练产出的 .pt 模型路径，例如 "runs/Combat_Units/old_run/weights/best.pt"
 base_model: "yolov8n.pt"
 
 # 【类别定义】
 # 最终 dataset.yaml 中的 'names' 字段将从此生成
 class_names:
-  0: '伤害数值'
-  1: '恢复数值'
-  2: '血条'
+  0: '凤凰'
+  1: '剑侠客'
+  # ... (此处省略，请填写所有类别)
 
 # 【YOLOv8 核心超参数】
 # 这里可以填写任何 YOLOv8 支持的训练参数
 hyperparameters:
-  epochs: 150
-  patience: 30
-  batch: 16
+  epochs: 100
+  patience: 20
+  batch: 32
   imgsz: 640
   device: 0
-  lr0: 0.002
   # ... 等等
 
 # ===================================================================
 # 产物导出 (定义最终产品的名称)
 # ===================================================================
-onnx_output_name: "yolo_ui_elements_v1.onnx"
+onnx_output_name: "combat_units_detector_v1.onnx"
 ```
-
----
-
-## 📦 Windows 端数据处理“黄金工作流”
-
-为了确保进入 `deepl` 流水线的数据是最高质量的，请在 Windows 端严格遵循以下数据处理流程。所有相关工具均位于 `tools/` 目录下。
-
-### **第 1 步：数据采集**
-*   使用 `asset_extractor.py` 自动标注“血条”等规则物体 (生成 `.txt`)。
-*   使用 `labelme` 手动标注“伤害数值”等不规则物体 (生成 `.json`)。
-
-### **第 2 步：数据融合**
-*   **目的：** 将 `.txt` 和 `.json` 的标注合并成统一的 `.json` 文件。
-*   **操作：** 运行 `python tools/data/yolo_to_labelme.py`。
-*   **结果：** 所有 `.txt` 的内容会被追加到同名的 `.json` 文件中，形成一个完整的数据集。
-
-### **第 3 步：数据微调 (可选)**
-*   **目的：** 对特定类别的边界框进行像素级的批量修正。
-*   **操作：**
-    1.  打开 `tools/postprocess_labels.py`。
-    2.  在底部的 `ADJUSTMENT_RULES` 中定义您的修正规则（例如，将所有“血条”的框向上移动2像素）。
-    3.  运行脚本。
-
-### **第 4 步：最终质检**
-*   **目的：** 可视化检查融合并修正后的最终数据质量。
-*   **操作：**
-    1.  打开 `tools/data/inspect_labelme_data.py`。
-    2.  在底部配置区，设置 `NUM_SAMPLES = -1` 以检查所有图片。
-    3.  运行脚本。
-    4.  在 `inspection_results` 文件夹中，仔细审查每一张生成的图片，确保标注完美。
-
-### **第 5 步：数据交接**
-*   将质检合格的、只包含 `.png` 和最终版 `.json` 的数据文件夹，传输到 WSL 的 `deepl/data/raw/` 目录下，准备开始训练！
 
 ---
 
@@ -155,17 +140,41 @@ onnx_output_name: "yolo_ui_elements_v1.onnx"
 ```
 deepl/
 ├── data/
-│   ├── raw/                # 存放您从 Windows 传来的原始数据集
-│   └── processed/          # 流水线自动生成的、用于训练的数据集
-├── runs/                   # 所有训练过程的日志、权重 (.pt) 和结果图都在这里
+│   ├── assets/               # 存放合成数据所需的原始资产（前景、背景）
+│   ├── raw/                  # 存放准备用于训练的原始数据集（手动标注或合成生成）
+│   └── processed/            # 流水线自动生成的、用于训练的数据集
+├── runs/                     # 所有训练过程的日志、权重 (.pt) 和结果图都在这里
 ├── saved/
-│   └── models/             # 【最终产物】可部署的 ONNX 模型
-├── tools/                  # 存放您在 Windows 端使用的数据处理工具
-│   ├── data/
-│   │   ├── yolo_to_labelme.py      # 融合工具
-│   │   └── inspect_labelme_data.py # Windows 质检工具
-│   └── postprocess_labels.py   # 标签微调工具
-├── pipeline.py             # 【唯一入口】模型工厂的总控制器
-├── run_config.template.yaml  # 实验指令单的模板
-└── ...                     # 其他系统核心模块
+│   └── models/               # 【最终产物】可部署的 ONNX 模型
+├── tools/
+│   ├── combat_unit_synthesizer.py # 【新】通用作战单位合成器
+│   └── ...                   # 其他辅助工具
+├── pipeline.py               # 【唯一入口】模型工厂的总控制器
+├── run_config.template.yaml    # 实验指令单的模板
+└── ...                       # 其他系统核心模块
 ```
+
+---
+
+## 🎨 附录：真实数据处理与标注工作流 (Windows 端)
+
+当您需要处理**真实的、非合成的**游戏截图时，为了确保进入 `deepl` 流水线的数据是最高质量的，请在 Windows 端严格遵循以下数据处理流程。
+
+### **第 1 步：数据采集与初步标注**
+*   使用 `asset_extractor.py` 自动标注“血条”等规则物体 (生成 `.txt`)。
+*   使用 `labelme` 手动标注“伤害数值”等不规则物体 (生成 `.json`)。
+
+### **第 2 步：数据融合**
+*   **目的：** 将 `.txt` 和 `.json` 的标注合并成统一的 `.json` 文件。
+*   **操作：** 运行 `python tools/data/yolo_to_labelme.py`。
+
+### **第 3 步：数据微调 (可选)**
+*   **目的：** 对特定类别的边界框进行像素级的批量修正。
+*   **操作：** 打开 `tools/postprocess_labels.py` 并定义您的修正规则后运行。
+
+### **第 4 步：最终质检**
+*   **目的：** 可视化检查融合并修正后的最终数据质量。
+*   **操作：** 运行 `tools/data/inspect_labelme_data.py` 并仔细审查结果。
+
+### **第 5 步：数据交接**
+*   将质检合格的、只包含 `.png` 和最终版 `.json` 的数据文件夹，传输到 WSL 的 `deepl/data/raw/` 目录下，然后即可开始**核心工作流的第二步**。
