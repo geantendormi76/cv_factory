@@ -1,21 +1,15 @@
+
 # ===================================================================
-# MHXY AI Model Factory - Experiment Configuration (Corrected Version)
+# MHXY AI Model Factory - Experiment Configuration (Rigid UI Version)
 # ===================================================================
 
-# --- 1. 基础信息 (唯一标识一次运行) ---
-project_name: "yolo_daoju_v1"
-run_name: "yolo_daoju_v1" # 直接使用您期望的运行名称
+project_name: "yolo_daoju_v2"
+run_name: "yolo_daoju_v2" # 升级版本号
 
-# --- 2. 任务定义 (决定使用哪种数据处理器) ---
 task_type: "detector"
+source_data_dir: "/home/zhz/cv_factory/data/raw/synthetic_inventory_v1" 
+base_model: "/home/zhz/cv_factory/models/yolo11n.pt"
 
-# --- 3. 数据流水线 (定义数据的输入与输出) ---
-source_data_dir: "/home/zhz/cv_factory/data/raw/yolo_daoju_v1" # 请确保此处指向您的实际数据
-
-# --- 4. 模型与训练 (定义模型本身和训练行为) ---
-base_model: "/home/zhz/cv_factory/models/yolo11n.pt" # 假设这是微调的起点
-
-# 【类别定义】 - 已移至顶层，作为数据描述的一部分，职责清晰
 class_names:
   0: '桃花'
   1: '飞行符'
@@ -30,19 +24,17 @@ class_names:
   10: '摄妖香'
   11: '佛光舍利子'
 
-
-# 【YOLOv8 核心超参数】 - 只包含纯粹的训练参数
 hyperparameters:
   # 核心设置
-  epochs: 200
+  epochs: 150       # 收敛会更快，可以减少轮数
   patience: 20
   batch: 32
   imgsz: 640
   device: 0
   workers: 8
-  exist_ok: True # 允许覆盖之前的运行，这在新架构中是安全的
+  exist_ok: True
 
-  # 优化器与学习率
+  # 优化器
   optimizer: 'auto'
   lr0: 0.01
   lrf: 0.01
@@ -50,20 +42,26 @@ hyperparameters:
   weight_decay: 0.0005
   warmup_epochs: 3.0
 
-  # 损失函数权重
+  # 损失权重
   box: 7.5
-  cls: 1.0
+  cls: 0.5          # 稍微降低分类权重，防止对未见过的物体强行分类
   dfl: 1.5
 
-  # 数据增强
-  degrees: 20.0
-  translate: 0.2
-  scale: 0.2
-  fliplr: 0.5
-  mosaic: 1.0
-  hsv_h: 0.015
-  hsv_s: 0.7
-  hsv_v: 0.4
+  # --- 【关键修改】针对游戏UI的增强设置 ---
+  degrees: 0.0      # ❌ 禁止旋转 (图标永远是正的)
+  translate: 0.1    # ✅ 允许轻微平移
+  scale: 0.05       # ⬇️ 极大降低缩放 (图标大小基本固定)
+  shear: 0.0        # ❌ 禁止剪切
+  perspective: 0.0  # ❌ 禁止透视
+  flipud: 0.0       # ❌ 禁止上下翻转
+  fliplr: 0.0       # ❌ 禁止左右翻转 (文字会反)
+  mosaic: 1.0       # ✅ 保留马赛克 (有助于小目标)
+  mixup: 0.0        # ❌ 关闭Mixup (图标不需要混合)
+  copy_paste: 0.0   
+  
+  # 颜色增强 (稍微降低，防止颜色变异过大)
+  hsv_h: 0.010      # 色调
+  hsv_s: 0.5        # 饱和度
+  hsv_v: 0.3        # 亮度
 
-# --- 5. 产物导出 (定义最终产品的名称) ---
-onnx_output_name: "yolo_daoju_v1.onnx" # 建议与 run_name 保持某种关联
+onnx_output_name: "yolo_daoju_v2.onnx"

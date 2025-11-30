@@ -9,6 +9,7 @@ __pycache__/
 /data/
 /tests/
 /inspection_results/
+/AAA/
 
 # 忽略所有数据集
 /data/raw/
